@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily Games Lab</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--line:#2a313c;--text:#e6edf3;--muted:#8b949e;--accent:#7cc4ff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  main{max-width:640px;margin:0 auto;padding:32px 16px}
+  h1{margin:0 0 4px;font-size:28px;letter-spacing:.06em}
+  p.lead{color:var(--muted);margin:0 0 24px}
+  .grid{display:grid;gap:12px}
+  a.card{display:block;text-decoration:none;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+  a.card:hover{border-color:var(--accent)}
+  .card h2{margin:0 0 4px;font-size:18px}
+  .card p{margin:0;color:var(--muted);font-size:14px}
+  .tag{display:inline-block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin-bottom:6px}
+  footer{margin-top:32px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Daily Games Lab</h1>
+  <p class="lead">Prototypes for playtesting. Each game has a new puzzle every day, one correct answer, and a score you can compare.</p>
+
+  <div class="grid" id="games">
+    <!-- To add a game: create games/<name>/index.html and add a card here. -->
+    <a class="card" href="games/fracture/">
+      <span class="tag">Physics · Prototype</span>
+      <h2>Fracture</h2>
+      <p>Strike a pane of glass to recreate the target crack pattern exactly. Spot, force and order all matter.</p>
+    </a>
+  </div>
+
+  <footer>Playtesters: tell us what was fun, what was confusing, and whether you'd come back tomorrow.</footer>
+</main>
+</body>
+</html>
