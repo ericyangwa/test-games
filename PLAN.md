@@ -68,6 +68,36 @@ Eric picked the four quickest games: Tilt, Slingshot, Sonar and Half. Each is `g
 - **Data:** 41 puzzle languages, each with two sentences ("My grandmother bakes bread every Sunday morning…" and "Yesterday it rained all day…"), and about 95 guessable languages. Sentences were written by Claude and not checked by native speakers; the less common ones (Georgian, Amharic, Tamil, Bengali, Zulu, Irish, Basque) most need checking.
 - **Audio: pre-generated Azure text-to-speech clips** (see README), so every browser plays the same MP3s. Clips are played through the Web Audio API so each stage stops at an exact length (snippet = 1.5 s, half = 55%, then the whole clip). Only sentences with a clip go into the daily rotation. Until clips are generated, the game falls back to the browser's own speech voices, which differ by device (Edge has the most, some browsers only have English). Later option: real recordings from Mozilla Common Voice (public domain), which would also give more sentences per language.
 
+### Polyglot: next version (planned Nov 9, 2026, not started)
+
+Goals: about 80 puzzle languages now (100+ later), difficulty that ramps through the week like the NYT crossword, and no repeated sentences for years.
+
+**Key fact:** a daily game needs only one clip per day. A year is 365 clips, about 55,000 characters of Azure text-to-speech, a tenth of the free tier's monthly allowance. So generate a whole year in one run, commit it, and Azure isn't needed again until next year (then cancel the subscription and remove the card).
+
+**Decided:** go to the ~80 languages that Azure has voices for. Checked Nov 9 against Azure's language-support page and the FLORES+ language list; every Azure language is also in FLORES+:
+Afrikaans, Albanian, Amharic, Arabic, Armenian, Assamese, Azerbaijani, Basque, Bengali, Bosnian, Bulgarian, Burmese, Cantonese, Catalan, Croatian, Czech, Danish, Dutch, Estonian, Filipino, Finnish, French, Galician, Georgian, German, Greek, Gujarati, Hebrew, Hindi, Hungarian, Icelandic, Indonesian, Irish, Italian, Japanese, Javanese, Kannada, Kazakh, Khmer, Korean, Lao, Latvian, Lithuanian, Macedonian, Malay, Malayalam, Maltese, Mandarin, Marathi, Mongolian, Nepali, Norwegian, Odia, Pashto, Persian, Polish, Portuguese, Punjabi, Romanian, Russian, Serbian, Sinhala, Slovak, Slovenian, Somali, Spanish, Sundanese, Swahili, Swedish, Tamil, Telugu, Thai, Turkish, Ukrainian, Urdu, Uzbek, Vietnamese, Welsh, Wu Chinese, Zulu (English left out as too easy). The second half of Azure's table was read from a summary, so recheck the list with the voice-list API before building.
+
+**Options for going past 80 later** (Azure lacks e.g. Hausa, Yoruba, Igbo, Kinyarwanda, Tatar, Quechua):
+- *Meta MMS text-to-speech:* open models for 1,000+ languages, run locally with Python. Sounds more robotic than Azure (the voice style could become a clue), and the license is non-commercial (CC BY-NC 4.0), so it would need replacing before any monetization.
+- *Mozilla Common Voice:* real recordings, public domain, many extra languages. A human voice next to synthetic ones could be a clue; needs a dataset download and hand-picking clips. Could also replace Azure entirely later for a more authentic feel.
+- *Native speakers:* best quality, costs time or money. Worth it for a launch version, not the prototype.
+
+**Data sources (on hold: Eric to do the FLORES+ sign-up another day):**
+- *Sentences: FLORES+* (huggingface.co/datasets/openlanguagedata/flores_plus). About 2,000 English sentences from Wikinews, Wikijunior and Wikivoyage, professionally translated into 200+ languages; dev split 997 and devtest 1,012 sentences per language; JSONL per language (e.g. `dev/rus_Cyrl.jsonl`), each row carrying a glottocode. License CC BY-SA 4.0: credit it, and the sentence data stays under that license (the game code doesn't). **Gated:** sign in to Hugging Face and accept the terms on the dataset page, then download only our ~80 languages (roughly 10–40 MB). Filter out sentences with names, places or numbers (check the English version for capitalized words and digits), and keep 60–160 characters. Replaces the 82 sentences Claude wrote, which no native speaker has checked.
+- *Language facts: Glottolog* (glottolog.org, CC BY 4.0). Family, branch and coordinates for every language, joined on the FLORES glottocode. Makes 200+ languages guessable even if only ~80 are puzzles.
+
+**Difficulty ramp:** 7 levels, Monday easiest through Saturday, Sunday hardest. Start from a hand ranking by familiarity (speaker counts and Wikipedia size as proxies), then adjust from playtest solve rates. With ~80 languages that's about 11 per level, so a language returns every ~11 weeks. Hard days could also hold back the family and region clues longer.
+
+**No repeats:** a script writes a schedule file in advance (one entry per day: language + FLORES sentence id). Rules: a language doesn't return until its level has cycled through; a sentence's meaning isn't reused within a year. Lightly scramble the file so nobody spoils future days by accident (anyone determined can still read it, as with Wordle).
+
+**Build order:**
+1. Recheck Azure voices with the voice-list API.
+2. Accept FLORES+ terms and download the ~80 languages; download Glottolog's language table.
+3. Build the language table: name, aliases, family/branch, coordinates, difficulty level, Azure locale.
+4. Filter sentences and write the schedule script.
+5. Extend `tools/polyglot-tts.mjs` to generate clips for the next 365 scheduled days.
+6. Point the game at the schedule (today's entry instead of the hand-written `P` list) and add attribution for FLORES+ and Glottolog.
+
 ## Game backlog
 
 The first four rows are built (see above), and so is Polyglot. Eric picks which to build next. Existing-game notes are unverified unless marked.
