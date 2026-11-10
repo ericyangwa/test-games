@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fracture</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --line:#2a313c; --text:#e6edf3; --muted:#8b949e;
+    --accent:#7cc4ff; --good:#3fb950; --warn:#d29922;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
+  .app{max-width:520px;margin:0 auto;padding:16px}
+  header{text-align:center;margin-bottom:12px}
+  h1{margin:0;font-size:26px;letter-spacing:.35em;font-weight:800}
+  .sub{color:var(--muted);font-size:13px}
+  .top{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+  .target-box{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+  #thumb{width:84px;height:84px;border-radius:6px;border:1px solid var(--line)}
+  .stats{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .stats div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center}
+  .stats b{display:block;font-size:22px}
+  .stats span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .pane-wrap{position:relative;width:100%;aspect-ratio:1/1;border-radius:10px;overflow:hidden;border:6px solid #3b2f25;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+  #pane{width:100%;height:100%;display:block;cursor:crosshair;touch-action:manipulation}
+  .force{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 8px}
+  button{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;cursor:pointer}
+  button:hover{border-color:#4b5563}
+  .force button.on{background:#1f3a5a;border-color:var(--accent)}
+  .force small{display:block;color:var(--muted);font-size:11px}
+  .row{display:flex;gap:8px;margin-bottom:8px}
+  .row button{flex:1}
+  #done{border-color:#5a4a1f}
+  label{color:var(--muted);font-size:13px;display:flex;gap:6px;align-items:center}
+  details{margin-top:8px;color:var(--muted);font-size:13px}
+  details .row{margin-top:8px}
+  .how{margin-top:14px;color:var(--muted);font-size:13px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .how b{color:var(--text)}
+  .result{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:16px}
+  .result[hidden]{display:none}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;max-width:360px;width:100%;text-align:center}
+  .card h2{margin:0 0 6px}
+  .card pre{background:#0b0f14;border-radius:8px;padding:10px;text-align:left;white-space:pre-wrap;font-size:14px}
+  .card .row{margin-top:10px}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>FRACTURE</h1>
+    <div class="sub"><a href="../../" style="color:inherit">← All games</a> · Puzzle #<span id="num"></span> · Recreate the break</div>
+  </header>
+
+  <div class="top">
+    <div class="target-box"><canvas id="thumb" width="168" height="168"></canvas>Target</div>
+    <div class="stats">
+      <div><b id="swings">6</b><span>Swings left</span></div>
+      <div><b id="par">3</b><span>Min hits</span></div>
+      <div><b id="acc">0%</b><span>Match</span></div>
+    </div>
+  </div>
+
+  <div class="pane-wrap"><canvas id="pane"></canvas></div>
+
+  <div class="force" id="force">
+    <button data-f="1">Tap<small>short, 5 cracks</small></button>
+    <button data-f="2" class="on">Hit<small>medium, 7 cracks</small></button>
+    <button data-f="3">Smash<small>long, 10 cracks</small></button>
+  </div>
+  <div class="row">
+    <button id="undo">Undo</button>
+    <button id="reset">New glass</button>
+    <button id="done">Give up</button>
+  </div>
+  <label><input type="checkbox" id="ghost" checked> Show target on the glass</label>
+
+  <details>
+    <summary>Prototype tools</summary>
+    <div class="row">
+      <button id="rand">Random puzzle</button>
+      <button id="sol">Reveal solution</button>
+      <button id="daily">Back to daily</button>
+    </div>
+  </details>
+
+  <div class="how">
+    <b>How to play:</b> recreate the target break exactly. There is one correct answer: the right spots, the right forces, in the right order. Strikes snap to a grid, and the same strike always breaks the same way.
+    <b>Order matters:</b> new cracks stop when they hit old ones.
+    <b>You can fail:</b> you get twice the minimum number of hits. Undo and new glass are free, but they don't give swings back. Reach 100% before you run out, or the glass wins.
+    Keys: 1/2/3 to pick force, Z to undo.
+  </div>
+</div>
+
+<div class="result" id="result" hidden>
+  <div class="card">
+    <h2 id="rTitle"></h2>
+    <div id="rSub" style="color:var(--muted)"></div>
+    <pre id="rShare"></pre>
+    <div class="row"><button id="copy">Copy result</button><button id="close">Keep playing</button></div>
+  </div>
+</div>
+
+<script>
+(() => {
+const W = 400, CELL = 20, N = W / CELL;
+const FORCE = {
+  1: {name:'Tap',   rays:5,  reach:95,  rings:[30,60],         branch:0},
+  2: {name:'Hit',   rays:7,  reach:185, rings:[34,74,120],     branch:0.03},
+  3: {name:'Smash', rays:10, reach:700, rings:[38,84,140,205], branch:0.05},
+};
+
+// ---------- deterministic randomness ----------
+function hashStr(s){ let h = 2166136261>>>0; for (const c of s){ h ^= c.charCodeAt(0); h = Math.imul(h,16777619)>>>0; } return h; }
+function rng32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a>>>15, 1 | a); t = t + Math.imul(t ^ t>>>7, 61 | t) ^ t; return ((t ^ t>>>14)>>>0) / 4294967296; }; }
+
+// ---------- geometry ----------
+function firstHit(ax,ay,bx,by,segs){
+  let bt = Infinity;
+  const rX=bx-ax, rY=by-ay;
+  for (let i=0;i<segs.length;i+=4){
+    const cx=segs[i],cy=segs[i+1],sX=segs[i+2]-cx,sY=segs[i+3]-cy;
+    const den = rX*sY - rY*sX; if (Math.abs(den) < 1e-9) continue;
+    const t = ((cx-ax)*sY - (cy-ay)*sX)/den;
+    const u = ((cx-ax)*rY - (cy-ay)*rX)/den;
+    if (t>1e-6 && t<=1 && u>=0 && u<=1 && t<bt) bt=t;
+  }
+  // pane edges
+  const edge = (t)=>{ if (t>1e-6 && t<=1 && t<bt) bt=t; };
+  if (bx<0) edge((0-ax)/rX); if (bx>W) edge((W-ax)/rX);
+  if (by<0) edge((0-ay)/rY); if (by>W) edge((W-ay)/rY);
+  return bt===Infinity ? null : [ax+rX*bt, ay+rY*bt];
+}
+// truncate a polyline at the first collision with prior cracks or the pane edge
+function truncate(pts, segs){
+  const out=[pts[0]];
+  for (let i=1;i<pts.length;i++){
+    const [ax,ay]=out[out.length-1], [bx,by]=pts[i];
+    const h = firstHit(ax,ay,bx,by,segs);
+    if (h){ out.push(h); return {pts:out, stopped:true}; }
+    out.push(pts[i]);
+  }
+  return {pts:out, stopped:false};
+}
+function pointAtRadius(pts, px, py, r){
+  for (let i=1;i<pts.length;i++){
+    const d1=Math.hypot(pts[i-1][0]-px,pts[i-1][1]-py), d2=Math.hypot(pts[i][0]-px,pts[i][1]-py);
+    if (d2>=r && d1<r){ const t=(r-d1)/(d2-d1); return [pts[i-1][0]+(pts[i][0]-pts[i-1][0])*t, pts[i-1][1]+(pts[i][1]-pts[i-1][1])*t]; }
+  }
+  return null;
+}
+
+// ---------- fracture model ----------
+// One strike = radial cracks (spokes) + concentric cracks (rings between spokes).
+// Shapes come only from (salt, grid point, force); prior cracks only truncate them.
+function strike(s, salt, segs){
+  const cfg = FORCE[s.f];
+  const px = s.gx*CELL + CELL/2, py = s.gy*CELL + CELL/2;
+  const seed = hashStr(salt+'|'+s.gx+','+s.gy+','+s.f);
+  const base = rng32(seed);
+  const off = base()*Math.PI*2;
+  const polys = [], rays = [];
+  for (let i=0;i<cfg.rays;i++){
+    const r = rng32(seed + (i+1)*7919);
+    const a0 = off + i*2*Math.PI/cfg.rays + (r()-0.5)*0.6*(2*Math.PI/cfg.rays);
+    const maxLen = cfg.reach*(0.7 + r()*0.6);
+    let x=px, y=py, ang=a0, len=0; const pts=[[x,y]]; const branches=[];
+    while (len < maxLen){
+      ang += (r()-0.5)*0.35; ang += (a0-ang)*0.15;
+      const st = 6 + r()*4;
+      x += Math.cos(ang)*st; y += Math.sin(ang)*st; len += st;
+      pts.push([x,y]);
+      if (r() < cfg.branch){
+        const ba = ang + (r()<0.5?-1:1)*(0.4+r()*0.4), bl = 18 + r()*40;
+        const bp=[[x,y]]; let bx=x, by=y, bang=ba;
+        for (let k=0;k<bl/7;k++){ bang += (r()-0.5)*0.4; bx+=Math.cos(bang)*7; by+=Math.sin(bang)*7; bp.push([bx,by]); }
+        branches.push({at:pts.length-1, pts:bp});
+      }
+      if (x<-20||x>W+20||y<-20||y>W+20) break;
+    }
+    const t = truncate(pts, segs);
+    rays.push(t.pts);
+    polys.push({pts:t.pts, kind:'ray'});
+    for (const b of branches) if (b.at < t.pts.length-1) polys.push({pts:truncate(b.pts, segs).pts, kind:'ring'});
+  }
+  const rr = rng32(seed ^ 0xA5A5A5);
+  cfg.rings.forEach((R) => {
+    for (let i=0;i<cfg.rays;i++){
+      const skip = rr() < 0.14, j1 = rr(), j2 = rr(), bows=[rr(),rr(),rr(),rr(),rr(),rr()];
+      if (skip) continue;
+      const A = pointAtRadius(rays[i], px, py, R*(0.9+j1*0.2));
+      const B = pointAtRadius(rays[(i+1)%cfg.rays], px, py, R*(0.9+j2*0.2));
+      if (!A || !B) continue;
+      const path=[A];
+      for (let k=1;k<=3;k++){
+        const t=k/4, mx=A[0]+(B[0]-A[0])*t, my=A[1]+(B[1]-A[1])*t;
+        const dx=mx-px, dy=my-py, d=Math.hypot(dx,dy)||1;
+        const bow = R*0.07*Math.sin(Math.PI*t) + (bows[k]-0.5)*5;
+        path.push([mx+dx/d*bow + (bows[k+2]-0.5)*3, my+dy/d*bow]);
+      }
+      path.push(B);
+      polys.push({pts:truncate(path, segs).pts, kind:'ring'});
+    }
+  });
+  return {polys, px, py};
+}
+function buildAll(strikes, salt){
+  const segs=[], out=[];
+  strikes.forEach((s,k) => {
+    const res = strike(s, salt, segs);
+    for (const p of res.polys){
+      p.k = k; out.push(p);
+      for (let i=1;i<p.pts.length;i++) segs.push(p.pts[i-1][0],p.pts[i-1][1],p.pts[i][0],p.pts[i][1]);
+    }
+  });
+  return out;
+}
+
+// ---------- scoring: how much of each pattern lies near the other ----------
+const TOL = 5;
+function samples(polys){
+  const s=[];
+  for (const p of polys) for (let i=1;i<p.pts.length;i++){
+    const [ax,ay]=p.pts[i-1],[bx,by]=p.pts[i], L=Math.hypot(bx-ax,by-ay), n=Math.max(1,Math.ceil(L/2));
+    for (let k=0;k<n;k++) s.push(ax+(bx-ax)*k/n, ay+(by-ay)*k/n);
+  }
+  return s;
+}
+function grid(s){ const g=new Map(); for (let i=0;i<s.length;i+=2){ const key=((s[i]/TOL)|0)+','+((s[i+1]/TOL)|0); (g.get(key)||g.set(key,[]).get(key)).push(s[i],s[i+1]); } return g; }
+function near(g,x,y){ const cx=(x/TOL)|0, cy=(y/TOL)|0;
+  for (let i=-1;i<=1;i++) for (let j=-1;j<=1;j++){ const a=g.get((cx+i)+','+(cy+j)); if (!a) continue;
+    for (let k=0;k<a.length;k+=2){ const dx=a[k]-x, dy=a[k+1]-y; if (dx*dx+dy*dy<=TOL*TOL) return true; } }
+  return false; }
+function score(target, player){
+  const ts=samples(target), ps=samples(player);
+  if (!ps.length || !ts.length) return 0;
+  const tg=grid(ts), pg=grid(ps);
+  let a=0,b=0;
+  for (let i=0;i<ts.length;i+=2) if (near(pg,ts[i],ts[i+1])) a++;
+  for (let i=0;i<ps.length;i+=2) if (near(tg,ps[i],ps[i+1])) b++;
+  const recall=a/(ts.length/2), precision=b/(ps.length/2);
+  const f1 = 2*recall*precision/(recall+precision||1);
+  return Math.pow(f1, 3)*100; // steepen so "almost" really means almost
+}
+
+// ---------- puzzle ----------
+function todayInfo(){ const d=new Date(); const num=Math.floor((Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())-Date.UTC(2026,10,1))/864e5)+1; return {salt:'day-'+num, num}; }
+function makeTarget(salt){
+  const r = rng32(hashStr('target|'+salt));
+  const k = 3, out=[];
+  let guard=0;
+  while (out.length<k && guard++<500){
+    const s={gx:3+Math.floor(r()*(N-6)), gy:3+Math.floor(r()*(N-6)), f:1+Math.floor(r()*3)};
+    if (out.every(o=>Math.hypot(o.gx-s.gx,o.gy-s.gy)>=6)) out.push(s);
+  }
+  return out;
+}
+
+// ---------- state ----------
+let S;
+function load(salt, num){
+  const target = makeTarget(salt);
+  S = {salt, num, target, targetPolys: buildAll(target, salt), strikes:[], polys:[], swings:0, budget:target.length*2, log:[], acc:0, done:false, showSol:false, anim:null};
+  document.getElementById('num').textContent = num;
+  document.getElementById('par').textContent = target.length;
+  update(); drawThumb();
+}
+
+// ---------- rendering ----------
+const pane = document.getElementById('pane'), ctx = pane.getContext('2d');
+const thumb = document.getElementById('thumb'), tctx = thumb.getContext('2d');
+let force = 2, hover = null, ghost = true;
+function resize(){ const r=pane.getBoundingClientRect(), dpr=window.devicePixelRatio||1; pane.width=r.width*dpr; pane.height=r.height*dpr; draw(); }
+function glass(c, size){
+  const g=c.createLinearGradient(0,0,size,size);
+  g.addColorStop(0,'#1c3346'); g.addColorStop(.5,'#16283a'); g.addColorStop(1,'#203a50');
+  c.fillStyle=g; c.fillRect(0,0,size,size);
+  const s=c.createLinearGradient(0,0,size,size*0.6);
+  s.addColorStop(0,'rgba(255,255,255,0)'); s.addColorStop(.45,'rgba(255,255,255,.05)'); s.addColorStop(.55,'rgba(255,255,255,0)');
+  c.fillStyle=s; c.fillRect(0,0,size,size);
+}
+function strokePoly(c, pts, frac){
+  if (frac<=0) return;
+  let total=0; for (let i=1;i<pts.length;i++) total+=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);
+  let lim=total*Math.min(1,frac), acc=0;
+  c.beginPath(); c.moveTo(pts[0][0],pts[0][1]);
+  for (let i=1;i<pts.length;i++){
+    const L=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);
+    if (acc+L>lim){ const t=(lim-acc)/L; c.lineTo(pts[i-1][0]+(pts[i][0]-pts[i-1][0])*t, pts[i-1][1]+(pts[i][1]-pts[i-1][1])*t); break; }
+    c.lineTo(pts[i][0],pts[i][1]); acc+=L;
+  }
+  c.stroke();
+}
+function draw(){
+  const sc = pane.width / W;
+  ctx.setTransform(sc,0,0,sc,0,0);
+  glass(ctx, W);
+  // snap grid dots
+  ctx.fillStyle='rgba(255,255,255,.07)';
+  for (let i=0;i<N;i++) for (let j=0;j<N;j++) ctx.fillRect(i*CELL+CELL/2-0.75, j*CELL+CELL/2-0.75, 1.5, 1.5);
+  if (ghost){
+    ctx.strokeStyle='rgba(124,196,255,.55)'; ctx.lineWidth=2.2; ctx.lineCap='round'; ctx.lineJoin='round';
+    for (const p of S.targetPolys) strokePoly(ctx, p.pts, 1);
+  }
+  if (S.showSol){
+    S.target.forEach((s,i)=>{ const x=s.gx*CELL+CELL/2, y=s.gy*CELL+CELL/2;
+      ctx.fillStyle='rgba(210,153,34,.9)'; ctx.beginPath(); ctx.arc(x,y,9,0,7); ctx.fill();
+      ctx.fillStyle='#000'; ctx.font='bold 10px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText((i+1)+FORCE[s.f].name[0], x, y); });
+  }
+  // player cracks
+  const last = S.strikes.length-1, t = S.anim ? S.anim.t : 1;
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.shadowColor='rgba(255,255,255,.6)'; ctx.shadowBlur=3;
+  ctx.strokeStyle='rgba(245,250,255,.95)'; ctx.lineWidth=1.3;
+  for (const p of S.polys){
+    let f=1;
+    if (p.k===last && S.anim) f = p.kind==='ray' ? t/0.65 : (t-0.45)/0.55;
+    strokePoly(ctx, p.pts, f);
+  }
+  ctx.shadowBlur=0;
+  S.strikes.forEach((s)=>{ const x=s.gx*CELL+CELL/2, y=s.gy*CELL+CELL/2;
+    ctx.fillStyle='rgba(255,255,255,.9)'; ctx.beginPath(); ctx.arc(x,y,2.6,0,7); ctx.fill(); });
+  if (hover && !S.done){
+    const x=hover.gx*CELL+CELL/2, y=hover.gy*CELL+CELL/2, cfg=FORCE[force];
+    ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=1; ctx.setLineDash([3,4]);
+    ctx.beginPath(); ctx.arc(x,y,Math.min(cfg.reach,cfg.rings[cfg.rings.length-1]),0,7); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(x-7,y); ctx.lineTo(x+7,y); ctx.moveTo(x,y-7); ctx.lineTo(x,y+7); ctx.stroke();
+  }
+}
+function drawThumb(){
+  const sc = thumb.width / W;
+  tctx.setTransform(sc,0,0,sc,0,0); glass(tctx, W);
+  tctx.strokeStyle='rgba(235,245,255,.95)'; tctx.lineWidth=2.2; tctx.lineCap='round';
+  for (const p of S.targetPolys) strokePoly(tctx, p.pts, 1);
+}
+function update(){
+  S.polys = buildAll(S.strikes, S.salt);
+  S.acc = score(S.targetPolys, S.polys);
+  const left = S.budget - S.swings, sw = document.getElementById('swings');
+  sw.textContent = left;
+  sw.style.color = left===0 ? '#f85149' : left<=2 ? 'var(--warn)' : '';
+  const a = Math.floor(S.acc), el = document.getElementById('acc');
+  el.textContent = a + '%';
+  el.style.color = a>=100 ? 'var(--good)' : a>=80 ? 'var(--warn)' : '';
+  draw();
+}
+
+// ---------- interaction ----------
+function cellFromEvent(e){ const r=pane.getBoundingClientRect(); const x=(e.clientX-r.left)/r.width*W, y=(e.clientY-r.top)/r.height*W;
+  return {gx:Math.max(0,Math.min(N-1,Math.floor(x/CELL))), gy:Math.max(0,Math.min(N-1,Math.floor(y/CELL)))}; }
+pane.addEventListener('pointermove', e=>{ if (e.pointerType==='mouse'){ hover=cellFromEvent(e); draw(); }});
+pane.addEventListener('pointerleave', ()=>{ hover=null; draw(); });
+pane.addEventListener('pointerdown', e=>{
+  if (S.done || S.anim || S.swings >= S.budget) return;
+  const c = cellFromEvent(e);
+  S.strikes.push({gx:c.gx, gy:c.gy, f:force}); S.swings++;
+  update();
+  S.log.push(S.acc);
+  shake();
+  S.anim={t:0}; const t0=performance.now();
+  (function step(now){ S.anim.t=Math.min(1,(now-t0)/380); draw(); if (S.anim.t<1) requestAnimationFrame(step); else { S.anim=null; draw(); if (S.acc>=99.5) finish(true); else if (S.swings>=S.budget) finish(false); } })(t0);
+});
+function shake(){ const w=pane.parentElement; w.animate([{transform:'translate(0,0)'},{transform:'translate(-3px,2px)'},{transform:'translate(2px,-2px)'},{transform:'translate(0,0)'}],{duration:160}); }
+document.querySelectorAll('#force button').forEach(b=>b.onclick=()=>setForce(+b.dataset.f));
+function setForce(f){ force=f; document.querySelectorAll('#force button').forEach(b=>b.classList.toggle('on', +b.dataset.f===f)); draw(); }
+document.getElementById('undo').onclick=()=>{ if (S.done) return; S.strikes.pop(); update(); };
+document.getElementById('reset').onclick=()=>{ if (S.done) return; S.strikes=[]; update(); };
+document.getElementById('done').onclick=()=>{ if (S.swings) finish(false); };
+document.getElementById('ghost').onchange=e=>{ ghost=e.target.checked; draw(); };
+document.getElementById('rand').onclick=()=>{ const n=Math.floor(Math.random()*1e6); load('rand-'+n, 'R'+n); };
+document.getElementById('daily').onclick=()=>{ const d=todayInfo(); load(d.salt, d.num); };
+document.getElementById('sol').onclick=()=>{ S.showSol=!S.showSol; draw(); };
+document.addEventListener('keydown', e=>{ if (e.key>='1'&&e.key<='3') setForce(+e.key); if (e.key==='z'||e.key==='Z') document.getElementById('undo').click(); });
+
+function finish(perfect){
+  S.done = true;
+  if (!perfect) S.showSol = true;
+  draw();
+  const par=S.target.length, a=Math.floor(S.acc);
+  const title = !perfect ? 'The glass wins' : S.swings===par ? 'Flawless' : S.swings<=par+1 ? 'Clean break' : 'Just made it';
+  const sq = v => v>=99.5 ? '🟩' : v>=80 ? '🟨' : v>=50 ? '🟧' : '🟥';
+  const share = `Fracture #${S.num} ${perfect ? S.swings : 'X'}/${S.budget}\n${S.log.map(sq).join('')}`;
+  document.getElementById('rTitle').textContent = title;
+  document.getElementById('rSub').textContent = perfect
+    ? `Exact match in ${S.swings} swing${S.swings>1?'s':''} (minimum ${par}).`
+    : `Best you reached was ${Math.floor(Math.max(0,...S.log))}%. The numbered dots show the answer: spot, force, and order.`;
+  document.getElementById('rShare').textContent = share;
+  document.getElementById('result').hidden = false;
+}
+document.getElementById('close').onclick=()=>{ document.getElementById('result').hidden=true; };
+document.getElementById('copy').onclick=async(e)=>{
+  const txt=document.getElementById('rShare').textContent;
+  try { await navigator.clipboard.writeText(txt); e.target.textContent='Copied!'; }
+  catch { const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy'); e.target.textContent='Copied!';}catch{} ta.remove(); }
+};
+
+window.addEventListener('resize', resize);
+const d=todayInfo(); load(d.salt, d.num); resize();
+window.__fracture = { get S(){return S;}, score, buildAll };
+})();
+</script>
+</body>
+</html>
