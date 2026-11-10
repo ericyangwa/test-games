@@ -49,9 +49,28 @@ Learnings:
 - Having a fail state matters; without it, players settle for "good enough."
 - The per-swing emoji grid (🟥🟧🟨🟩) makes the share text feel like Wordle.
 
+## Round 1 prototypes (built Nov 2026, not yet playtested)
+
+Eric picked the four quickest games: Tilt, Slingshot, Sonar and Half. Each is `games/<name>/index.html` and follows Fracture's structure.
+
+- **Tilt.** 10×10 ice board; the ball slides until it hits a rock or the edge and must *stop* on the star. The generator BFS-searches random rock layouts and puts the star 6–9 tilts from the start. Budget is 2× the minimum. Emoji per tilt: 🟩 the move got one tilt closer, 🟨 no closer, 🟥 further away or a dead end.
+- **Slingshot.** Every launch starts from the same pad; the probe's path comes from a fixed-timestep gravity sim, so the same angle and power always fly the same way. The straight shot is always blocked by a planet. The generator sweeps every angle and power and keeps layouts where only 0.4–3% of shots hit. 6 launches; old shots stay on screen as feedback. Emoji by closest approach.
+- **Sonar.** 25×25 sea with generated islands. A ping returns the straight-line distance to the wreck, rounded to whole squares; ping the wreck's square to win. 6 pings. Emoji by range.
+- **Half.** Changed from the backlog version in two ways. (1) The island is generated, not a real country, so there's no outline data to ship; real countries could replace it later (e.g. Natural Earth, which is public domain). (2) The border must pass through a capital ★, which makes the answer a single angle (the generator checks there's exactly one) instead of any line that bisects the area. 4 cuts, each reports the split; win within 0.5 points of 50/50.
+
+## Polyglot (built Nov 2026, not yet playtested)
+
+`games/polyglot/index.html`. Heardle for languages: hear a sentence, name the language in 6 guesses. Each miss or skip unlocks more: a short snippet, then half, then the whole sentence, then written clues (the sentence in its own script, the language family, where it's spoken).
+
+- **The main risk is that it's all-or-nothing:** you either recognize a language or you don't, and more audio doesn't help with one you've never heard. The fix is Worldle-style misses: each wrong guess shows the distance and direction from its homeland to the answer's, and whether it's in the same branch or family. Emoji: 🟩 right, 🟨 same branch, 🟧 same family, 🟥 different family, ⬛ skip.
+- **Difficulty by weekday:** Mon/Tue easy (Spanish, Japanese…), Wed/Thu medium (Dutch, Thai…), Fri–Sun hard (Basque, Georgian…). Each tier cycles through its languages before repeating.
+- **Near-identical languages count as correct:** Hindi/Urdu, Indonesian/Malay, Czech/Slovak, Serbian/Croatian/Bosnian, Zulu/Xhosa, Dutch/Afrikaans, Portuguese/Galician.
+- **Data:** 41 puzzle languages, each with two sentences ("My grandmother bakes bread every Sunday morning…" and "Yesterday it rained all day…"), and about 95 guessable languages. Sentences were written by Claude and not checked by native speakers; the less common ones (Georgian, Amharic, Tamil, Bengali, Zulu, Irish, Basque) most need checking.
+- **Audio is a placeholder.** It uses the browser's built-in speech voices, which differ by device (Edge has the most; Chrome has about 20 languages; some browsers only have English) so players don't hear the same thing. For real playtests, record or download clips (Mozilla Common Voice is public domain) into `games/polyglot/clips/` and list them in `CLIPS` at the top of the script; a puzzle with a clip plays that instead.
+
 ## Game backlog
 
-Four games are the quickest to prototype: Tilt, Slingshot, Sonar and Half. Eric picks which to build next. Existing-game notes are unverified unless marked.
+The first four rows are built (see above), and so is Polyglot. Eric picks which to build next. Existing-game notes are unverified unless marked.
 
 | Game | Concept | Score (fail state) | Build effort | Notes |
 | --- | --- | --- | --- | --- |
@@ -76,7 +95,7 @@ Dropped: Inkblot (no correct answer to grade), Telephone, Ember and Last Second 
 ## Next steps
 
 - [ ] Push this repo to GitHub and turn on GitHub Pages (see README.md)
-- [ ] Pick 3–4 games from the backlog to prototype
-- [ ] Build each as `games/<name>/index.html` and add its card to the hub
+- [x] Pick 3–4 games from the backlog to prototype (Tilt, Slingshot, Sonar, Half)
+- [x] Build each as `games/<name>/index.html` and add its card to the hub
 - [ ] Send the hosted link to playtesters
 - [ ] Collect feedback: was it fun, was it confusing, would you come back tomorrow

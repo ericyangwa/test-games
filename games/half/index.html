@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Half</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --line:#2a313c; --text:#e6edf3; --muted:#8b949e;
+    --accent:#7cc4ff; --good:#3fb950; --warn:#d29922;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
+  .app{max-width:520px;margin:0 auto;padding:16px}
+  header{text-align:center;margin-bottom:12px}
+  h1{margin:0;font-size:26px;letter-spacing:.35em;font-weight:800}
+  .sub{color:var(--muted);font-size:13px}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+  .stats div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center}
+  .stats b{display:block;font-size:22px}
+  .stats span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .map-wrap{position:relative;width:100%;aspect-ratio:1/1;border-radius:10px;overflow:hidden;border:6px solid #2a3a4a;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+  #map{width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+  .island{text-align:center;font-size:13px;color:var(--muted);margin:8px 0 0;letter-spacing:.06em}
+  .island b{color:var(--text)}
+  button{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;cursor:pointer}
+  button:hover{border-color:#4b5563}
+  #cut{background:#1f3a5a;border-color:var(--accent);font-weight:700}
+  .row{display:flex;gap:8px;margin:12px 0 8px}
+  .row button{flex:1}
+  .row button.sm{flex:0 0 56px}
+  #done{border-color:#5a4a1f}
+  ol.log{margin:4px 0 0;padding-left:22px;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+  details{margin-top:8px;color:var(--muted);font-size:13px}
+  details .row{margin-top:8px}
+  .how{margin-top:14px;color:var(--muted);font-size:13px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .how b{color:var(--text)}
+  .result{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:16px}
+  .result[hidden]{display:none}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;max-width:360px;width:100%;text-align:center}
+  .card h2{margin:0 0 6px}
+  .card pre{background:#0b0f14;border-radius:8px;padding:10px;text-align:left;white-space:pre-wrap;font-size:14px}
+  .card .row{margin-top:10px}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>HALF</h1>
+    <div class="sub"><a href="../../" style="color:inherit">← All games</a> · Puzzle #<span id="num"></span> · Split the island in two</div>
+  </header>
+
+  <div class="stats">
+    <div><b id="left">0</b><span>Cuts left</span></div>
+    <div><b id="last">–</b><span>Last split</span></div>
+    <div><b id="best">–</b><span>Best (pts off)</span></div>
+  </div>
+
+  <div class="map-wrap"><canvas id="map"></canvas></div>
+  <div class="island">The island of <b id="name"></b></div>
+
+  <div class="row">
+    <button class="sm" id="ccw" aria-label="Rotate counterclockwise">⟲</button>
+    <button id="cut">Cut</button>
+    <button class="sm" id="cw" aria-label="Rotate clockwise">⟳</button>
+  </div>
+  <div class="row" style="margin-top:0">
+    <button id="done">Give up</button>
+  </div>
+  <ol class="log" id="log"></ol>
+
+  <details>
+    <summary>Prototype tools</summary>
+    <div class="row">
+      <button id="rand">Random puzzle</button>
+      <button id="sol">Reveal solution</button>
+      <button id="daily">Back to daily</button>
+    </div>
+  </details>
+
+  <div class="how">
+    <b>How to play:</b> draw one straight border through the capital ★ that splits the island into two halves of equal area. Exactly one angle does it.
+    Drag on the map to swing the line around the capital, fine-tune with ⟲ ⟳, then press Cut. Each cut tells you how the land was split.
+    <b>You can fail:</b> you get 4 cuts. Land within half a point of 50/50 to win. Fewest cuts wins.
+    Keys: ←/→ rotate (hold Shift for big steps), Enter to cut.
+  </div>
+</div>
+
+<div class="result" id="result" hidden>
+  <div class="card">
+    <h2 id="rTitle"></h2>
+    <div id="rSub" style="color:var(--muted)"></div>
+    <pre id="rShare"></pre>
+    <div class="row"><button id="copy">Copy result</button><button id="close">Keep looking</button></div>
+  </div>
+</div>
+
+<script>
+(() => {
+const W = 400, BUDGET = 4, TOL = 0.5, D2R = Math.PI/180;
+
+// ---------- deterministic randomness ----------
+function hashStr(s){ let h = 2166136261>>>0; for (const c of s){ h ^= c.charCodeAt(0); h = Math.imul(h,16777619)>>>0; } return h; }
+function rng32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a>>>15, 1 | a); t = t + Math.imul(t ^ t>>>7, 61 | t) ^ t; return ((t ^ t>>>14)>>>0) / 4294967296; }; }
+function todayInfo(){ const d=new Date(); const num=Math.floor((Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())-Date.UTC(2026,10,1))/864e5)+1; return {salt:'day-'+num, num}; }
+
+// ---------- geometry ----------
+function area(p){ let s=0; for (let i=0,j=p.length-1;i<p.length;j=i++) s += p[j][0]*p[i][1] - p[i][0]*p[j][1]; return Math.abs(s)/2; }
+// keep the part of the polygon on one side of the line through C at angle th (half-plane clip)
+function clip(poly, C, th, sign){
+  const dx=Math.cos(th), dy=Math.sin(th), sd=p=>sign*(dx*(p[1]-C[1]) - dy*(p[0]-C[0])), out=[];
+  for (let i=0;i<poly.length;i++){
+    const a=poly[i], b=poly[(i+1)%poly.length], sa=sd(a), sb=sd(b);
+    if (sa>=0) out.push(a);
+    if ((sa>=0)!==(sb>=0)){ const t=sa/(sa-sb); out.push([a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t]); }
+  }
+  return out;
+}
+function inside(poly, x, y){ let c=false; for (let i=0,j=poly.length-1;i<poly.length;j=i++){ const [xi,yi]=poly[i],[xj,yj]=poly[j]; if ((yi>y)!==(yj>y) && x < (xj-xi)*(y-yi)/(yj-yi)+xi) c=!c; } return c; }
+function edgeDist(poly, x, y){ let m=Infinity; for (let i=0,j=poly.length-1;i<poly.length;j=i++){ const [ax,ay]=poly[j],[bx,by]=poly[i], vx=bx-ax, vy=by-ay, t=Math.max(0,Math.min(1,((x-ax)*vx+(y-ay)*vy)/(vx*vx+vy*vy))); m=Math.min(m, Math.hypot(ax+vx*t-x, ay+vy*t-y)); } return m; }
+function centroid(p){ let a=0,cx=0,cy=0; for (let i=0,j=p.length-1;i<p.length;j=i++){ const f=p[j][0]*p[i][1]-p[i][0]*p[j][1]; a+=f; cx+=(p[j][0]+p[i][0])*f; cy+=(p[j][1]+p[i][1])*f; } return a ? [cx/(3*a), cy/(3*a)] : p[0]; }
+
+// ---------- puzzle ----------
+const SYL = ['va','ren','mo','ka','thi','lor','sa','ben','dri','ol','mar','ys','tal','or','qui','sel','an','dor','ve','na'];
+function makeIsland(salt){
+  const r = rng32(hashStr('half|'+salt));
+  const name = (() => { const n=2+Math.floor(r()*2); let s=''; for (let i=0;i<n;i++) s+=SYL[Math.floor(r()*SYL.length)]; return s[0].toUpperCase()+s.slice(1); })();
+  for (let tries=0; tries<400; tries++){
+    const waves=[]; for (let k=2;k<=14;k++) waves.push([k, 0.3/Math.pow(k,1.2)*(0.3+r()*0.9), r()*Math.PI*2]);
+    const bumps=[]; const nb=1+Math.floor(r()*3);
+    for (let i=0;i<nb;i++) bumps.push([r()*Math.PI*2, 0.12+r()*0.22, (r()<0.65?1:-1)*(0.18+r()*0.32)]);
+    const M=260, raw=[]; let ok=true;
+    for (let i=0;i<M;i++){
+      const t=i/M*Math.PI*2; let f=1;
+      for (const [k,a,ph] of waves) f += a*Math.sin(k*t+ph);
+      for (const [c,w,h] of bumps){ const dd=Math.atan2(Math.sin(t-c),Math.cos(t-c)); f += h*Math.exp(-(dd/w)*(dd/w)); }
+      if (f<0.3){ ok=false; break; }
+      raw.push([Math.cos(t)*f, Math.sin(t)*f]);
+    }
+    if (!ok) continue;
+    let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+    for (const [x,y] of raw){ x0=Math.min(x0,x); x1=Math.max(x1,x); y0=Math.min(y0,y); y1=Math.max(y1,y); }
+    const s=Math.min(330/(x1-x0), 330/(y1-y0));
+    const poly=raw.map(([x,y])=>[W/2+(x-(x0+x1)/2)*s, W/2+(y-(y0+y1)/2)*s]);
+    const total=area(poly), cen=centroid(poly);
+    const frac=(C,th)=>area(clip(poly,C,th,1))/total;
+    for (let c=0;c<60;c++){
+      const C=[35+r()*330, 35+r()*330];
+      if (!inside(poly,C[0],C[1]) || edgeDist(poly,C[0],C[1])<24 || Math.hypot(C[0]-cen[0],C[1]-cen[1])<30) continue;
+      // exactly one bisecting direction in [0, 180)
+      const n=360, g=[]; for (let i=0;i<=n;i++) g.push(frac(C, i/n*Math.PI)-0.5);
+      let roots=[]; for (let i=0;i<n;i++) if ((g[i]<0)!==(g[i+1]<0)) roots.push(i);
+      if (roots.length!==1) continue;
+      let lo=roots[0]/n*Math.PI, hi=(roots[0]+1)/n*Math.PI, glo=g[roots[0]];
+      for (let it=0;it<50;it++){ const mid=(lo+hi)/2, gm=frac(C,mid)-0.5; if ((gm<0)===(glo<0)){ lo=mid; glo=gm; } else hi=mid; }
+      const sol=(lo+hi)/2;
+      // must punish sloppy aim: 8 degrees off costs at least 1.5 points
+      if (Math.abs(frac(C,sol+8*D2R)-0.5)<0.015 || Math.abs(frac(C,sol-8*D2R)-0.5)<0.015) continue;
+      return {poly, total, C, sol, name, frac:th=>frac(C,th)};
+    }
+  }
+}
+
+// ---------- state ----------
+let S;
+function load(salt, num){
+  const I = makeIsland(salt);
+  const rs = rng32(hashStr('start|'+salt));
+  S = {salt, num, I, th:(rs()*180)*D2R, cuts:[], done:false, showSol:false};
+  document.getElementById('num').textContent = num;
+  document.getElementById('name').textContent = I.name;
+  document.getElementById('result').hidden = true;
+  update();
+}
+const splitOf = f => { const a=Math.min(f,1-f)*100; return {a, b:100-a, off:50-a}; };
+const fmt = s => `${s.a.toFixed(1)} / ${s.b.toFixed(1)}`;
+function update(){
+  const left = BUDGET - S.cuts.length, el = document.getElementById('left');
+  el.textContent = left;
+  el.style.color = left===0 ? '#f85149' : left<=1 ? 'var(--warn)' : '';
+  const last = S.cuts[S.cuts.length-1];
+  document.getElementById('last').textContent = last ? `${Math.round(last.a)}/${Math.round(last.b)}` : '–';
+  document.getElementById('best').textContent = S.cuts.length ? Math.min(...S.cuts.map(c=>c.off)).toFixed(1) : '–';
+  document.getElementById('log').innerHTML = S.cuts.map(c=>`<li>${fmt(c)} — ${c.off<=TOL ? '<b style="color:var(--good)">even split</b>' : `${c.off.toFixed(1)} points off`}</li>`).join('');
+  draw();
+}
+
+// ---------- rendering ----------
+const cv=document.getElementById('map'), ctx=cv.getContext('2d');
+function resize(){ const r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1; cv.width=r.width*dpr; cv.height=r.height*dpr; draw(); }
+function polyPath(p){ ctx.beginPath(); p.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y)); ctx.closePath(); }
+function line(C, th){ const dx=Math.cos(th)*600, dy=Math.sin(th)*600; ctx.beginPath(); ctx.moveTo(C[0]-dx,C[1]-dy); ctx.lineTo(C[0]+dx,C[1]+dy); ctx.stroke(); }
+function star(x,y,R,r){ ctx.beginPath(); for (let i=0;i<10;i++){ const a=-Math.PI/2+i*Math.PI/5, d=i%2?r:R; ctx.lineTo(x+Math.cos(a)*d, y+Math.sin(a)*d); } ctx.closePath(); }
+function draw(){
+  if (!S) return;
+  const sc=cv.width/W; ctx.setTransform(sc,0,0,sc,0,0);
+  const {poly, C} = S.I;
+  ctx.fillStyle='#244b66'; ctx.fillRect(0,0,W,W);
+  ctx.strokeStyle='rgba(255,255,255,.05)'; ctx.lineWidth=1;
+  for (let i=40;i<W;i+=40){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,W); ctx.moveTo(0,i); ctx.lineTo(W,i); ctx.stroke(); }
+  // shallows + land
+  ctx.save(); polyPath(poly); ctx.strokeStyle='rgba(140,200,220,.25)'; ctx.lineWidth=10; ctx.lineJoin='round'; ctx.stroke(); ctx.restore();
+  const last = S.cuts[S.cuts.length-1];
+  if (last){
+    const A=clip(poly,C,last.th,1), B=clip(poly,C,last.th,-1);
+    ctx.fillStyle='#86a95a'; polyPath(A); ctx.fill();
+    ctx.fillStyle='#c4a96b'; polyPath(B); ctx.fill();
+  } else { ctx.fillStyle='#9bb56a'; polyPath(poly); ctx.fill(); }
+  polyPath(poly); ctx.strokeStyle='#4b5f33'; ctx.lineWidth=1.5; ctx.stroke();
+  // old cuts
+  ctx.save(); polyPath(poly); ctx.clip();
+  ctx.lineWidth=1.2; ctx.strokeStyle='rgba(40,30,20,.35)'; ctx.setLineDash([4,4]);
+  S.cuts.slice(0,-1).forEach(c=>line(C,c.th)); ctx.setLineDash([]);
+  if (last){ ctx.strokeStyle='rgba(40,30,20,.8)'; ctx.lineWidth=1.8; line(C,last.th); }
+  ctx.restore();
+  if (last){
+    const fA=S.I.frac(last.th)*100;
+    [[clip(poly,C,last.th,1),fA],[clip(poly,C,last.th,-1),100-fA]].forEach(([p,v])=>{
+      const [x,y]=centroid(p); ctx.font='bold 13px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.lineWidth=3; ctx.strokeStyle='rgba(255,255,255,.8)'; ctx.strokeText(v.toFixed(1)+'%',x,y); ctx.fillStyle='#1d2a14'; ctx.fillText(v.toFixed(1)+'%',x,y);
+    });
+  }
+  if (S.showSol){ ctx.strokeStyle='rgba(242,182,49,.95)'; ctx.lineWidth=2.2; ctx.setLineDash([7,5]); line(C,S.I.sol); ctx.setLineDash([]); }
+  // the line being aimed
+  if (!S.done){ ctx.strokeStyle='rgba(255,255,255,.95)'; ctx.lineWidth=2; line(C,S.th); }
+  ctx.fillStyle='#d23b3b'; ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; star(C[0],C[1],8,3.6); ctx.fill(); ctx.stroke();
+}
+
+// ---------- interaction ----------
+function setAngle(th){ S.th = ((th % Math.PI) + Math.PI) % Math.PI; draw(); }
+function rotate(deg){ if (!S.done) setAngle(S.th + deg*D2R); }
+function cut(th){
+  if (!S || S.done || S.cuts.length>=BUDGET) return null;
+  if (th!==undefined) setAngle(th);
+  const c = {th:S.th, ...splitOf(S.I.frac(S.th))};
+  S.cuts.push(c); update();
+  if (c.off<=TOL) finish(true); else if (S.cuts.length>=BUDGET) finish(false);
+  return c;
+}
+let dragging=false;
+function aimFromEvent(e){
+  const r=cv.getBoundingClientRect(), x=(e.clientX-r.left)/r.width*W, y=(e.clientY-r.top)/r.height*W, C=S.I.C;
+  if (Math.hypot(x-C[0],y-C[1])<6) return;
+  setAngle(Math.atan2(y-C[1], x-C[0]));
+}
+cv.addEventListener('pointerdown', e=>{ if (S.done) return; dragging=true; cv.setPointerCapture(e.pointerId); aimFromEvent(e); });
+cv.addEventListener('pointermove', e=>{ if (dragging) aimFromEvent(e); });
+cv.addEventListener('pointerup', ()=>{ dragging=false; });
+document.getElementById('ccw').onclick=()=>rotate(-0.25);
+document.getElementById('cw').onclick=()=>rotate(0.25);
+document.getElementById('cut').onclick=()=>cut();
+document.addEventListener('keydown', e=>{
+  if (e.key==='ArrowLeft'){ e.preventDefault(); rotate(e.shiftKey?-2:-0.25); }
+  else if (e.key==='ArrowRight'){ e.preventDefault(); rotate(e.shiftKey?2:0.25); }
+  else if (e.key==='Enter'){ e.preventDefault(); cut(); }
+});
+document.getElementById('done').onclick=()=>{ if (!S.done && S.cuts.length) finish(false); };
+document.getElementById('rand').onclick=()=>{ const n=Math.floor(Math.random()*1e6); load('rand-'+n, 'R'+n); };
+document.getElementById('daily').onclick=()=>{ const d=todayInfo(); load(d.salt, d.num); };
+document.getElementById('sol').onclick=()=>{ S.showSol=!S.showSol; draw(); };
+
+function finish(won){
+  S.done = true;
+  if (!won) S.showSol = true;
+  update();
+  const n = S.cuts.length, best = Math.min(...S.cuts.map(c=>c.off));
+  const title = !won ? 'Border dispute' : n===1 ? 'Perfect partition' : n===2 ? 'Fair split' : 'Just made it';
+  const sq = c => c.off<=TOL ? '🟩' : c.off<=2 ? '🟨' : c.off<=5 ? '🟧' : '🟥';
+  const share = `Half #${S.num} ${won ? n : 'X'}/${BUDGET}\n${S.cuts.map(sq).join('')}`;
+  document.getElementById('rTitle').textContent = title;
+  document.getElementById('rSub').textContent = won
+    ? `Split ${S.I.name} ${fmt(S.cuts[n-1])} in ${n} cut${n>1?'s':''}.`
+    : `Your best cut was ${best.toFixed(1)} points off. The even split is the gold line.`;
+  document.getElementById('rShare').textContent = share;
+  document.getElementById('result').hidden = false;
+}
+document.getElementById('close').onclick=()=>{ document.getElementById('result').hidden=true; };
+document.getElementById('copy').onclick=async(e)=>{
+  const txt=document.getElementById('rShare').textContent;
+  try { await navigator.clipboard.writeText(txt); e.target.textContent='Copied!'; }
+  catch { const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy'); e.target.textContent='Copied!';}catch{} ta.remove(); }
+};
+
+window.addEventListener('resize', resize);
+const d=todayInfo(); load(d.salt, d.num); resize();
+window.__half = { get S(){return S;}, cut, setAngle, load, makeIsland };
+})();
+</script>
+</body>
+</html>

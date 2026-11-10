@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slingshot</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --line:#2a313c; --text:#e6edf3; --muted:#8b949e;
+    --accent:#7cc4ff; --good:#3fb950; --warn:#d29922;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
+  .app{max-width:520px;margin:0 auto;padding:16px}
+  header{text-align:center;margin-bottom:12px}
+  h1{margin:0;font-size:26px;letter-spacing:.35em;font-weight:800}
+  .sub{color:var(--muted);font-size:13px}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+  .stats div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center}
+  .stats b{display:block;font-size:22px}
+  .stats span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .space-wrap{position:relative;width:100%;aspect-ratio:1/1;border-radius:10px;overflow:hidden;border:6px solid #1d2233;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+  #space{width:100%;height:100%;display:block;cursor:crosshair;touch-action:none}
+  .aim{display:grid;grid-template-columns:auto 1fr auto auto auto;gap:6px 8px;align-items:center;margin:12px 0 8px;font-size:13px;color:var(--muted)}
+  .aim input[type=range]{width:100%}
+  .aim output{color:var(--text);min-width:48px;text-align:right;font-variant-numeric:tabular-nums}
+  .aim button{padding:4px 10px}
+  button{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;cursor:pointer}
+  button:hover{border-color:#4b5563}
+  #launch{background:#1f3a5a;border-color:var(--accent);font-weight:700}
+  .row{display:flex;gap:8px;margin-bottom:8px}
+  .row button{flex:1}
+  #done{border-color:#5a4a1f}
+  ol.log{margin:4px 0 0;padding-left:22px;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+  details{margin-top:8px;color:var(--muted);font-size:13px}
+  details .row{margin-top:8px}
+  .how{margin-top:14px;color:var(--muted);font-size:13px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .how b{color:var(--text)}
+  .result{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:16px}
+  .result[hidden]{display:none}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;max-width:360px;width:100%;text-align:center}
+  .card h2{margin:0 0 6px}
+  .card pre{background:#0b0f14;border-radius:8px;padding:10px;text-align:left;white-space:pre-wrap;font-size:14px}
+  .card .row{margin-top:10px}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>SLINGSHOT</h1>
+    <div class="sub"><a href="../../" style="color:inherit">← All games</a> · Puzzle #<span id="num"></span> · Bend your shot into the beacon</div>
+  </header>
+
+  <div class="stats">
+    <div><b id="left">0</b><span>Launches left</span></div>
+    <div><b id="last">–</b><span>Last miss</span></div>
+    <div><b id="best">–</b><span>Best miss</span></div>
+  </div>
+
+  <div class="space-wrap"><canvas id="space"></canvas></div>
+
+  <div class="aim">
+    <span>Angle</span><input type="range" id="ang" min="-90" max="90" step="0.5"><output id="angV"></output>
+    <button data-adj="ang" data-v="-0.5" aria-label="Angle down">−</button><button data-adj="ang" data-v="0.5" aria-label="Angle up">+</button>
+    <span>Power</span><input type="range" id="pow" min="20" max="100" step="1"><output id="powV"></output>
+    <button data-adj="pow" data-v="-1" aria-label="Power down">−</button><button data-adj="pow" data-v="1" aria-label="Power up">+</button>
+  </div>
+  <div class="row">
+    <button id="launch">Launch</button>
+    <button id="done">Give up</button>
+  </div>
+  <ol class="log" id="log"></ol>
+
+  <details>
+    <summary>Prototype tools</summary>
+    <div class="row">
+      <button id="rand">Random puzzle</button>
+      <button id="sol">Reveal solution</button>
+      <button id="daily">Back to daily</button>
+    </div>
+  </details>
+
+  <div class="how">
+    <b>How to play:</b> launch the probe from the pad and get it into the beacon. Planets pull on it, and the straight shot is always blocked, so you have to bend it around them.
+    Every launch starts from the pad, and the same angle and power always fly the same path. Your old shots stay on screen.
+    <b>You can fail:</b> you get 6 launches. Fewest launches wins.
+    Drag on the space to aim (farther = more power), or use the sliders. Keys: ←/→ angle, ↑/↓ power, Space to launch.
+  </div>
+</div>
+
+<div class="result" id="result" hidden>
+  <div class="card">
+    <h2 id="rTitle"></h2>
+    <div id="rSub" style="color:var(--muted)"></div>
+    <pre id="rShare"></pre>
+    <div class="row"><button id="copy">Copy result</button><button id="close">Keep looking</button></div>
+  </div>
+</div>
+
+<script>
+(() => {
+const W = 400, BUDGET = 6;
+const MAXSTEPS = 900, SUB = 2, VK = 0.06, GC = 0.06, TR = 10;
+
+// ---------- deterministic randomness ----------
+function hashStr(s){ let h = 2166136261>>>0; for (const c of s){ h ^= c.charCodeAt(0); h = Math.imul(h,16777619)>>>0; } return h; }
+function rng32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a>>>15, 1 | a); t = t + Math.imul(t ^ t>>>7, 61 | t) ^ t; return ((t ^ t>>>14)>>>0) / 4294967296; }; }
+function todayInfo(){ const d=new Date(); const num=Math.floor((Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())-Date.UTC(2026,10,1))/864e5)+1; return {salt:'day-'+num, num}; }
+
+// ---------- physics ----------
+// angle in degrees, 0 = right, positive = up. Fixed timestep, so a shot always flies the same path.
+function sim(L, angDeg, power, record){
+  let x=L.start.x, y=L.start.y;
+  const a=angDeg*Math.PI/180, v=power*VK, dt=1/SUB;
+  let vx=Math.cos(a)*v, vy=-Math.sin(a)*v, best=Infinity;
+  const pts = record ? [[x,y]] : null;
+  const end = (res) => { if (record) pts.push([x,y]); return {res, hit:res==='hit', miss:Math.max(0,best), pts}; };
+  for (let i=0;i<MAXSTEPS;i++){
+    for (let s=0;s<SUB;s++){
+      let ax=0, ay=0;
+      for (const p of L.planets){
+        const dx=p.x-x, dy=p.y-y, d2=dx*dx+dy*dy, d=Math.sqrt(d2);
+        if (d<p.r) return end('crash');
+        const f = GC*p.r*p.r/(d2*d); ax+=dx*f; ay+=dy*f;
+      }
+      vx+=ax*dt; vy+=ay*dt; x+=vx*dt; y+=vy*dt;
+      const m = Math.hypot(L.target.x-x, L.target.y-y) - TR;
+      if (m<best) best=m;
+      if (m<=0) return end('hit');
+    }
+    if (record) pts.push([x,y]);
+    if (x<-80||x>W+80||y<-80||y>W+80) return end('lost');
+  }
+  return end('drift');
+}
+function segDist(a,b,p){ const vx=b.x-a.x, vy=b.y-a.y, t=Math.max(0,Math.min(1,((p.x-a.x)*vx+(p.y-a.y)*vy)/(vx*vx+vy*vy))); return Math.hypot(a.x+vx*t-p.x, a.y+vy*t-p.y); }
+
+// ---------- puzzle ----------
+function makeLevel(salt){
+  const r = rng32(hashStr('sling|'+salt));
+  let fallback = null;
+  for (let tries=0; tries<120; tries++){
+    const start = {x:32+r()*18, y:60+r()*280};
+    const target = {x:330+r()*38, y:45+r()*310};
+    if (Math.hypot(target.x-start.x, target.y-start.y) < 270) continue;
+    const np = 2 + Math.floor(r()*3), planets = [];
+    for (let g=0; planets.length<np && g<300; g++){
+      const p = {x:105+r()*190, y:35+r()*330, r:14+r()*20};
+      if (Math.hypot(p.x-start.x,p.y-start.y) < p.r+45) continue;
+      if (Math.hypot(p.x-target.x,p.y-target.y) < p.r+35) continue;
+      if (planets.some(q=>Math.hypot(q.x-p.x,q.y-p.y) < q.r+p.r+28)) continue;
+      planets.push(p);
+    }
+    if (planets.length<np) continue;
+    const L = {start, target, planets};
+    if (!planets.some(p=>p.r>=20 && segDist(start,target,p) < p.r*0.5)) continue; // straight shot must hit a big planet near its middle
+    const hits = new Set(); let total = 0;
+    for (let a=-80; a<=80; a+=1) for (let pw=20; pw<=100; pw+=2){ total++; if (sim(L,a,pw).hit) hits.add(a+','+pw); }
+    if (!hits.size) continue;
+    // pick the most forgiving solution: the hit with the most hitting neighbours
+    let sol=null, bestN=-1;
+    for (const k of hits){ const [a,pw]=k.split(',').map(Number); let n=0;
+      for (const [da,dp] of [[-1,0],[1,0],[0,-2],[0,2],[-1,-2],[1,2],[-1,2],[1,-2]]) if (hits.has((a+da)+','+(pw+dp))) n++;
+      if (n>bestN){ bestN=n; sol=[a,pw]; } }
+    L.sol = sol; L.frac = hits.size/total;
+    if (L.frac>=0.004 && L.frac<=0.03) return L;
+    if (!fallback || Math.abs(Math.log(L.frac/0.01)) < Math.abs(Math.log(fallback.frac/0.01))) fallback = L;
+  }
+  return fallback;
+}
+
+// ---------- state ----------
+let S;
+const angI=document.getElementById('ang'), powI=document.getElementById('pow');
+function load(salt, num){
+  const L = makeLevel(salt);
+  const rs = rng32(hashStr('stars|'+salt)), stars=[];
+  for (let i=0;i<110;i++) stars.push([rs()*W, rs()*W, rs()*1.3+0.3, rs()]);
+  S = {salt, num, L, stars, shots:[], done:false, showSol:false, anim:null, solPts: sim(L, L.sol[0], L.sol[1], true).pts};
+  angI.value = 0; powI.value = 60;
+  document.getElementById('num').textContent = num;
+  document.getElementById('result').hidden = true;
+  update();
+}
+function update(){
+  const left = BUDGET - S.shots.length, el = document.getElementById('left');
+  el.textContent = left;
+  el.style.color = left===0 ? '#f85149' : left<=2 ? 'var(--warn)' : '';
+  const last = S.shots[S.shots.length-1];
+  document.getElementById('last').textContent = last ? (last.hit ? 'Hit!' : Math.round(last.miss)) : '–';
+  document.getElementById('best').textContent = S.shots.length ? Math.round(Math.min(...S.shots.map(s=>s.miss))) : '–';
+  document.getElementById('angV').textContent = (+angI.value).toFixed(1)+'°';
+  document.getElementById('powV').textContent = powI.value;
+  const why = {crash:'crashed', lost:'flew off', drift:'ran out of fuel', hit:'hit the beacon'};
+  document.getElementById('log').innerHTML = S.shots.map(s=>`<li>${s.a.toFixed(1)}° · power ${s.pw} — ${s.hit ? '<b style="color:var(--good)">hit the beacon</b>' : `${why[s.res]}, missed by ${Math.round(s.miss)}`}</li>`).join('');
+  draw();
+}
+
+// ---------- rendering ----------
+const cv=document.getElementById('space'), ctx=cv.getContext('2d');
+const PCOL = [['#e0a66b','#7a4320'],['#7fc2a8','#225a4a'],['#b99be6','#4b2f7a'],['#e47f7f','#7a2525'],['#8fb4ea','#28477a']];
+function resize(){ const r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1; cv.width=r.width*dpr; cv.height=r.height*dpr; draw(); }
+function path(pts, n){ ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]); for (let i=1;i<Math.min(n,pts.length);i++) ctx.lineTo(pts[i][0],pts[i][1]); ctx.stroke(); }
+function draw(){
+  if (!S) return;
+  const sc=cv.width/W; ctx.setTransform(sc,0,0,sc,0,0);
+  ctx.fillStyle='#070a14'; ctx.fillRect(0,0,W,W);
+  for (const [x,y,s,b] of S.stars){ ctx.fillStyle=`rgba(255,255,255,${0.25+b*0.5})`; ctx.fillRect(x,y,s,s); }
+  const L=S.L;
+  // planets
+  L.planets.forEach((p,i)=>{
+    ctx.strokeStyle='rgba(255,255,255,.06)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(p.x,p.y,p.r*2.6,0,7); ctx.stroke();
+    const [c1,c2]=PCOL[i%PCOL.length], g=ctx.createRadialGradient(p.x-p.r*.35,p.y-p.r*.35,p.r*.1,p.x,p.y,p.r);
+    g.addColorStop(0,c1); g.addColorStop(1,c2); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill();
+  });
+  // beacon
+  const t = performance.now()/600;
+  ctx.strokeStyle='rgba(124,255,180,.9)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(L.target.x,L.target.y,TR,0,7); ctx.stroke();
+  ctx.strokeStyle=`rgba(124,255,180,${0.25+0.2*Math.sin(t)})`; ctx.beginPath(); ctx.arc(L.target.x,L.target.y,TR+5,0,7); ctx.stroke();
+  ctx.fillStyle='rgba(124,255,180,.9)'; ctx.beginPath(); ctx.arc(L.target.x,L.target.y,2.5,0,7); ctx.fill();
+  // solution
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  if (S.showSol){ ctx.strokeStyle='rgba(242,182,49,.9)'; ctx.lineWidth=2; ctx.setLineDash([5,4]); path(S.solPts, Infinity); ctx.setLineDash([]); }
+  // shots
+  S.shots.forEach((s,i)=>{
+    const live = S.anim && i===S.shots.length-1;
+    ctx.strokeStyle = s.hit ? 'rgba(124,255,180,.9)' : live ? 'rgba(255,255,255,.9)' : 'rgba(150,180,220,.35)';
+    ctx.lineWidth = live||s.hit ? 1.8 : 1.2;
+    const n = live ? Math.max(2, Math.floor(s.pts.length*S.anim.t)) : s.pts.length;
+    path(s.pts, n);
+    if (live){ const q=s.pts[n-1]; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(q[0],q[1],3,0,7); ctx.fill(); }
+    else if (s.res==='crash'){ const q=s.pts[s.pts.length-1]; ctx.fillStyle='#f85149'; ctx.font='bold 11px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('✕',q[0],q[1]); }
+  });
+  // pad and aim
+  ctx.fillStyle='#d6dde8'; ctx.beginPath(); ctx.arc(L.start.x,L.start.y,6,0,7); ctx.fill();
+  ctx.strokeStyle='rgba(214,221,232,.5)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(L.start.x,L.start.y,10,0,7); ctx.stroke();
+  if (!S.done){
+    const a=(+angI.value)*Math.PI/180, len=20+(+powI.value)*0.65, ex=L.start.x+Math.cos(a)*len, ey=L.start.y-Math.sin(a)*len;
+    ctx.strokeStyle='rgba(255,255,255,.8)'; ctx.lineWidth=2; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(L.start.x,L.start.y); ctx.lineTo(ex,ey); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(ex,ey); ctx.lineTo(ex-Math.cos(a-0.4)*8, ey+Math.sin(a-0.4)*8); ctx.moveTo(ex,ey); ctx.lineTo(ex-Math.cos(a+0.4)*8, ey+Math.sin(a+0.4)*8); ctx.stroke();
+  }
+}
+(function pulse(){ if (S && !S.anim) draw(); setTimeout(()=>requestAnimationFrame(pulse), 80); })();
+
+// ---------- interaction ----------
+function launch(a, pw){
+  if (!S || S.done || S.anim || S.shots.length>=BUDGET) return null;
+  a = a ?? +angI.value; pw = pw ?? +powI.value;
+  const r = sim(S.L, a, pw, true);
+  S.shots.push({a, pw, ...r});
+  const dur = Math.min(1400, 300 + r.pts.length*2.2), t0 = performance.now();
+  S.anim = {t:0};
+  update();
+  const st = S;
+  (function step(now){
+    if (S!==st) return; // a new puzzle was loaded mid-animation
+    S.anim.t=Math.min(1,(now-t0)/dur); draw();
+    if (S.anim.t<1) return requestAnimationFrame(step);
+    S.anim=null; update();
+    if (r.hit) finish(true); else if (S.shots.length>=BUDGET) finish(false);
+  })(t0);
+  return r;
+}
+function setAim(a, pw){
+  if (a!==undefined) angI.value = Math.max(-90, Math.min(90, Math.round(a*2)/2));
+  if (pw!==undefined) powI.value = Math.max(20, Math.min(100, Math.round(pw)));
+  update();
+}
+function aimFromEvent(e){
+  const r=cv.getBoundingClientRect(), x=(e.clientX-r.left)/r.width*W, y=(e.clientY-r.top)/r.height*W;
+  const dx=x-S.L.start.x, dy=S.L.start.y-y, d=Math.hypot(dx,dy);
+  if (d<8) return;
+  setAim(Math.atan2(dy,dx)*180/Math.PI, 20 + (Math.min(d,200)-8)/192*80);
+}
+let dragging=false;
+cv.addEventListener('pointerdown', e=>{ if (S.done||S.anim) return; dragging=true; cv.setPointerCapture(e.pointerId); aimFromEvent(e); });
+cv.addEventListener('pointermove', e=>{ if (dragging) aimFromEvent(e); });
+cv.addEventListener('pointerup', ()=>{ dragging=false; });
+angI.oninput = powI.oninput = () => update();
+document.querySelectorAll('[data-adj]').forEach(b=>b.onclick=()=>{ const i=b.dataset.adj==='ang'?angI:powI; i.value=+i.value+(+b.dataset.v); update(); });
+document.getElementById('launch').onclick=()=>launch();
+document.addEventListener('keydown', e=>{
+  if (e.target.tagName==='INPUT') { if (e.key===' '||e.key==='Enter'){ e.preventDefault(); launch(); } return; }
+  const k={ArrowLeft:['ang',-0.5],ArrowRight:['ang',0.5],ArrowUp:['pow',1],ArrowDown:['pow',-1]}[e.key];
+  if (k){ e.preventDefault(); const i=k[0]==='ang'?angI:powI; i.value=+i.value+k[1]; update(); }
+  else if (e.key===' '||e.key==='Enter'){ e.preventDefault(); launch(); }
+});
+document.getElementById('done').onclick=()=>{ if (!S.done && S.shots.length) finish(false); };
+document.getElementById('rand').onclick=()=>{ const n=Math.floor(Math.random()*1e6); load('rand-'+n, 'R'+n); };
+document.getElementById('daily').onclick=()=>{ const d=todayInfo(); load(d.salt, d.num); };
+document.getElementById('sol').onclick=()=>{ S.showSol=!S.showSol; draw(); };
+
+function finish(won){
+  S.done = true;
+  if (!won) S.showSol = true;
+  update();
+  const n = S.shots.length;
+  const title = !won ? 'Lost in space' : n===1 ? 'Hole in one' : n<=3 ? 'Nice shot' : 'Just made it';
+  const sq = s => s.hit ? '🟩' : s.miss<=20 ? '🟨' : s.miss<=60 ? '🟧' : '🟥';
+  const share = `Slingshot #${S.num} ${won ? n : 'X'}/${BUDGET}\n${S.shots.map(sq).join('')}`;
+  document.getElementById('rTitle').textContent = title;
+  document.getElementById('rSub').textContent = won
+    ? `Into the beacon on launch ${n} of ${BUDGET}.`
+    : `Closest you got was ${Math.round(Math.min(...S.shots.map(s=>s.miss)))}. One answer: ${S.L.sol[0]}° at power ${S.L.sol[1]}, drawn in gold.`;
+  document.getElementById('rShare').textContent = share;
+  document.getElementById('result').hidden = false;
+}
+document.getElementById('close').onclick=()=>{ document.getElementById('result').hidden=true; };
+document.getElementById('copy').onclick=async(e)=>{
+  const txt=document.getElementById('rShare').textContent;
+  try { await navigator.clipboard.writeText(txt); e.target.textContent='Copied!'; }
+  catch { const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy'); e.target.textContent='Copied!';}catch{} ta.remove(); }
+};
+
+window.addEventListener('resize', resize);
+const d=todayInfo(); load(d.salt, d.num); resize();
+window.__slingshot = { get S(){return S;}, sim, launch, setAim, load, makeLevel };
+})();
+</script>
+</body>
+</html>

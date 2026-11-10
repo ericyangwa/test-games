@@ -8,16 +8,11 @@ games/<name>/index.html one self-contained file per game
 .nojekyll               tells GitHub Pages to serve files as-is
 ```
 
-## Host it on GitHub Pages
+## Hosting
 
-1. Create a new empty repository on GitHub (for example `daily-games`).
-2. From this folder, run:
-   ```
-   git remote add origin https://github.com/<your-username>/daily-games.git
-   git push -u origin main
-   ```
-3. On GitHub, open the repo's **Settings → Pages**, set **Source** to "Deploy from a branch", choose `main` and `/ (root)`, and save.
-4. After a minute the site is live at `https://<your-username>.github.io/daily-games/`.
+The site is served by GitHub Pages from the `main` branch, root folder, at https://ericyangwa.github.io/test-games/. Every push to `main` redeploys it within a minute or two. Pages only works while the repository is public (on a free GitHub plan).
+
+All links are relative (`games/<name>/`, `../../`), so the site works under the `/test-games/` path without changes.
 
 Netlify or Vercel also work: point them at the repo, with no build command and the root folder as the publish directory.
 

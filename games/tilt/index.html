@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tilt</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --line:#2a313c; --text:#e6edf3; --muted:#8b949e;
+    --accent:#7cc4ff; --good:#3fb950; --warn:#d29922;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
+  .app{max-width:520px;margin:0 auto;padding:16px}
+  header{text-align:center;margin-bottom:12px}
+  h1{margin:0;font-size:26px;letter-spacing:.35em;font-weight:800}
+  .sub{color:var(--muted);font-size:13px}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+  .stats div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center}
+  .stats b{display:block;font-size:22px}
+  .stats span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .board-wrap{position:relative;width:100%;aspect-ratio:1/1;border-radius:10px;overflow:hidden;border:6px solid #23303d;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+  #board{width:100%;height:100%;display:block;touch-action:none}
+  .msg{min-height:20px;text-align:center;color:var(--warn);font-size:13px;margin:8px 0 0}
+  .pad{display:grid;grid-template-columns:repeat(3,64px);grid-template-rows:repeat(2,48px);gap:6px;justify-content:center;margin:10px 0}
+  .pad button{font-size:20px;padding:0}
+  .pad .u{grid-column:2;grid-row:1} .pad .l{grid-column:1;grid-row:2} .pad .d{grid-column:2;grid-row:2} .pad .r{grid-column:3;grid-row:2}
+  button{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;cursor:pointer}
+  button:hover{border-color:#4b5563}
+  .row{display:flex;gap:8px;margin-bottom:8px}
+  .row button{flex:1}
+  #done{border-color:#5a4a1f}
+  details{margin-top:8px;color:var(--muted);font-size:13px}
+  details .row{margin-top:8px}
+  .how{margin-top:14px;color:var(--muted);font-size:13px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .how b{color:var(--text)}
+  .result{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:16px}
+  .result[hidden]{display:none}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;max-width:360px;width:100%;text-align:center}
+  .card h2{margin:0 0 6px}
+  .card pre{background:#0b0f14;border-radius:8px;padding:10px;text-align:left;white-space:pre-wrap;font-size:14px}
+  .card .row{margin-top:10px}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>TILT</h1>
+    <div class="sub"><a href="../../" style="color:inherit">← All games</a> · Puzzle #<span id="num"></span> · Slide the ball onto the star</div>
+  </header>
+
+  <div class="stats">
+    <div><b id="left">0</b><span>Tilts left</span></div>
+    <div><b id="par">0</b><span>Min tilts</span></div>
+    <div><b id="used">0</b><span>Used</span></div>
+  </div>
+
+  <div class="board-wrap"><canvas id="board"></canvas></div>
+  <div class="msg" id="msg"></div>
+
+  <div class="pad">
+    <button class="u" data-d="U" aria-label="Tilt up">↑</button>
+    <button class="l" data-d="L" aria-label="Tilt left">←</button>
+    <button class="d" data-d="D" aria-label="Tilt down">↓</button>
+    <button class="r" data-d="R" aria-label="Tilt right">→</button>
+  </div>
+  <div class="row">
+    <button id="undo">Undo</button>
+    <button id="reset">Restart</button>
+    <button id="done">Give up</button>
+  </div>
+
+  <details>
+    <summary>Prototype tools</summary>
+    <div class="row">
+      <button id="rand">Random puzzle</button>
+      <button id="sol">Reveal solution</button>
+      <button id="daily">Back to daily</button>
+    </div>
+  </details>
+
+  <div class="how">
+    <b>How to play:</b> tilt the board and the ball slides on the ice until it hits a rock or the edge. Get it to <b>stop</b> on the star; sliding over it doesn't count.
+    <b>You can fail:</b> you get twice the minimum number of tilts. Undo and restart are free, but they don't give tilts back.
+    Swipe the board, use the arrows, or press arrow keys / WASD. Z to undo.
+  </div>
+</div>
+
+<div class="result" id="result" hidden>
+  <div class="card">
+    <h2 id="rTitle"></h2>
+    <div id="rSub" style="color:var(--muted)"></div>
+    <pre id="rShare"></pre>
+    <div class="row"><button id="copy">Copy result</button><button id="close">Keep looking</button></div>
+  </div>
+</div>
+
+<script>
+(() => {
+const N = 10, W = 400, CELL = W / N;
+const DIRS = {L:[-1,0], R:[1,0], U:[0,-1], D:[0,1]};
+const ARROW = {L:'←', R:'→', U:'↑', D:'↓'};
+
+// ---------- deterministic randomness ----------
+function hashStr(s){ let h = 2166136261>>>0; for (const c of s){ h ^= c.charCodeAt(0); h = Math.imul(h,16777619)>>>0; } return h; }
+function rng32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a>>>15, 1 | a); t = t + Math.imul(t ^ t>>>7, 61 | t) ^ t; return ((t ^ t>>>14)>>>0) / 4294967296; }; }
+function todayInfo(){ const d=new Date(); const num=Math.floor((Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())-Date.UTC(2026,10,1))/864e5)+1; return {salt:'day-'+num, num}; }
+
+// ---------- rules ----------
+function slide(rocks, x, y, d){
+  const [dx,dy] = DIRS[d];
+  for(;;){ const nx=x+dx, ny=y+dy; if (nx<0||ny<0||nx>=N||ny>=N||rocks[ny*N+nx]) break; x=nx; y=ny; }
+  return [x,y];
+}
+function bfs(rocks, sx, sy){
+  const dist=new Int16Array(N*N).fill(-1), par=new Int16Array(N*N).fill(-1), pd=new Array(N*N).fill(null);
+  const s=sy*N+sx; dist[s]=0; const q=[s];
+  for (let h=0; h<q.length; h++){
+    const c=q[h], x=c%N, y=(c/N)|0;
+    for (const d of 'LRUD'){
+      const [nx,ny]=slide(rocks,x,y,d), n=ny*N+nx;
+      if (n===c || dist[n]>=0) continue;
+      dist[n]=dist[c]+1; par[n]=c; pd[n]=d; q.push(n);
+    }
+  }
+  return {dist, par, pd};
+}
+function distToGoal(P, x, y){ return bfs(P.rocks, x, y).dist[P.gy*N+P.gx]; } // -1 = unreachable
+
+// ---------- puzzle ----------
+function makePuzzle(salt){
+  const r = rng32(hashStr('tilt|'+salt));
+  for (let tries=0; tries<5000; tries++){
+    const minPar = tries < 4000 ? 6 : 4;
+    const rocks = new Uint8Array(N*N), dens = 0.13 + r()*0.09;
+    for (let i=0;i<N*N;i++) rocks[i] = r()<dens ? 1 : 0;
+    let s; do { s = Math.floor(r()*N*N); } while (rocks[s]);
+    const {dist, par, pd} = bfs(rocks, s%N, (s/N)|0);
+    let best = -1; for (let i=0;i<N*N;i++) if (dist[i]>best) best=dist[i];
+    if (best < minPar) continue;
+    const want = Math.min(best, 9), cands = [];
+    for (let i=0;i<N*N;i++) if (dist[i]===want) cands.push(i);
+    const g = cands[Math.floor(r()*cands.length)];
+    const sol = []; for (let c=g; c!==s; c=par[c]) sol.unshift(pd[c]);
+    return {rocks, sx:s%N, sy:(s/N)|0, gx:g%N, gy:(g/N)|0, par:want, sol};
+  }
+}
+
+// ---------- state ----------
+let S;
+function load(salt, num){
+  const P = makePuzzle(salt);
+  S = {salt, num, P, pos:[P.sx,P.sy], hist:[], trail:[[P.sx,P.sy]], used:0, budget:P.par*2, log:[], done:false, showSol:false, anim:null};
+  document.getElementById('num').textContent = num;
+  document.getElementById('par').textContent = P.par;
+  document.getElementById('result').hidden = true;
+  update();
+}
+function update(){
+  const left = S.budget - S.used, el = document.getElementById('left');
+  el.textContent = left;
+  el.style.color = left===0 ? '#f85149' : left<=2 ? 'var(--warn)' : '';
+  document.getElementById('used').textContent = S.used;
+  const stuck = !S.done && distToGoal(S.P, S.pos[0], S.pos[1]) < 0;
+  document.getElementById('msg').textContent = stuck ? "The star can't be reached from here. Undo or restart." : '';
+  draw();
+}
+
+// ---------- rendering ----------
+const cv = document.getElementById('board'), ctx = cv.getContext('2d');
+function resize(){ const r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1; cv.width=r.width*dpr; cv.height=r.height*dpr; draw(); }
+function rr(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
+function star(c,x,y,R,r){ c.beginPath(); for (let i=0;i<10;i++){ const a=-Math.PI/2+i*Math.PI/5, d=i%2?r:R; c.lineTo(x+Math.cos(a)*d, y+Math.sin(a)*d); } c.closePath(); }
+const ctr = v => v*CELL + CELL/2;
+function draw(){
+  if (!S) return;
+  const sc = cv.width / W; ctx.setTransform(sc,0,0,sc,0,0);
+  const g = ctx.createLinearGradient(0,0,W,W);
+  g.addColorStop(0,'#cfe8f5'); g.addColorStop(.5,'#b4d8ec'); g.addColorStop(1,'#c7e2f1');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,W);
+  ctx.strokeStyle='rgba(255,255,255,.55)'; ctx.lineWidth=1;
+  for (let i=1;i<N;i++){ ctx.beginPath(); ctx.moveTo(i*CELL,0); ctx.lineTo(i*CELL,W); ctx.moveTo(0,i*CELL); ctx.lineTo(W,i*CELL); ctx.stroke(); }
+  const P = S.P;
+  // goal
+  ctx.fillStyle='#f2b631'; ctx.strokeStyle='#a5740d'; ctx.lineWidth=1.5;
+  star(ctx, ctr(P.gx), ctr(P.gy), CELL*0.38, CELL*0.17); ctx.fill(); ctx.stroke();
+  // rocks
+  for (let y=0;y<N;y++) for (let x=0;x<N;x++) if (P.rocks[y*N+x]){
+    ctx.fillStyle='#41505f'; rr(ctx, x*CELL+2, y*CELL+2, CELL-4, CELL-4, 7); ctx.fill();
+    ctx.fillStyle='#5b6c7d'; rr(ctx, x*CELL+5, y*CELL+4, CELL-10, CELL/2-4, 5); ctx.fill();
+  }
+  // trail since last restart
+  if (S.trail.length>1){
+    ctx.strokeStyle='rgba(40,90,140,.35)'; ctx.lineWidth=4; ctx.lineCap='round'; ctx.lineJoin='round';
+    ctx.beginPath(); S.trail.forEach(([x,y],i)=> i?ctx.lineTo(ctr(x),ctr(y)):ctx.moveTo(ctr(x),ctr(y))); ctx.stroke();
+  }
+  // solution
+  if (S.showSol){
+    let x=P.sx, y=P.sy; ctx.strokeStyle='rgba(210,140,20,.9)'; ctx.lineWidth=3; ctx.setLineDash([6,5]);
+    ctx.beginPath(); ctx.moveTo(ctr(x),ctr(y));
+    const marks=[];
+    P.sol.forEach((d,i)=>{ [x,y]=slide(P.rocks,x,y,d); ctx.lineTo(ctr(x),ctr(y)); marks.push([x,y,i+1,d]); });
+    ctx.stroke(); ctx.setLineDash([]);
+    for (const [mx,my,n,d] of marks){
+      ctx.fillStyle='rgba(210,140,20,.95)'; ctx.beginPath(); ctx.arc(ctr(mx)+CELL*0.28, ctr(my)-CELL*0.28, 9, 0, 7); ctx.fill();
+      ctx.fillStyle='#000'; ctx.font='bold 10px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(n+ARROW[d], ctr(mx)+CELL*0.28, ctr(my)-CELL*0.28);
+    }
+  }
+  // start marker
+  ctx.strokeStyle='rgba(40,90,140,.5)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(ctr(P.sx),ctr(P.sy),CELL*0.36,0,7); ctx.stroke();
+  // ball
+  let bx=ctr(S.pos[0]), by=ctr(S.pos[1]);
+  if (S.anim){ const t=S.anim.t, e=1-(1-t)*(1-t); bx=ctr(S.anim.from[0]+(S.anim.to[0]-S.anim.from[0])*e); by=ctr(S.anim.from[1]+(S.anim.to[1]-S.anim.from[1])*e); }
+  const bg = ctx.createRadialGradient(bx-5,by-6,2,bx,by,CELL*0.34);
+  bg.addColorStop(0,'#ff8f8f'); bg.addColorStop(1,'#c0262d');
+  ctx.fillStyle='rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(bx+2,by+5,CELL*0.3,CELL*0.18,0,0,7); ctx.fill();
+  ctx.fillStyle=bg; ctx.beginPath(); ctx.arc(bx,by,CELL*0.32,0,7); ctx.fill();
+}
+
+// ---------- interaction ----------
+function move(d){
+  if (!S || S.done || S.anim || S.used >= S.budget) return false;
+  const [x,y] = S.pos, [nx,ny] = slide(S.P.rocks, x, y, d);
+  if (nx===x && ny===y){ bump(d); return false; }
+  const before = distToGoal(S.P, x, y), after = distToGoal(S.P, nx, ny);
+  S.log.push(after<0 ? 'bad' : (before>=0 && after===before-1) ? 'good' : (before<0 || after<=before) ? 'meh' : 'bad');
+  S.used++; S.hist.push([x,y]); S.pos=[nx,ny]; S.trail.push([nx,ny]);
+  const cells = Math.abs(nx-x)+Math.abs(ny-y), dur = Math.max(120, cells*55), t0 = performance.now();
+  S.anim = {t:0, from:[x,y], to:[nx,ny]};
+  const st = S;
+  (function step(now){
+    if (S!==st) return; // a new puzzle was loaded mid-animation
+    S.anim.t = Math.min(1,(now-t0)/dur); draw();
+    if (S.anim.t<1) return requestAnimationFrame(step);
+    S.anim = null; update();
+    if (nx===S.P.gx && ny===S.P.gy) finish(true); else if (S.used>=S.budget) finish(false);
+  })(t0);
+  return true;
+}
+function bump(d){ const [dx,dy]=DIRS[d]; cv.parentElement.animate([{transform:'translate(0,0)'},{transform:`translate(${dx*4}px,${dy*4}px)`},{transform:'translate(0,0)'}],{duration:140}); }
+document.querySelectorAll('.pad button').forEach(b=>b.onclick=()=>move(b.dataset.d));
+let sw=null;
+cv.addEventListener('pointerdown', e=>{ sw={x:e.clientX,y:e.clientY}; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointerup', e=>{
+  if (!sw) return; const dx=e.clientX-sw.x, dy=e.clientY-sw.y; sw=null;
+  if (Math.max(Math.abs(dx),Math.abs(dy))<18) return;
+  move(Math.abs(dx)>Math.abs(dy) ? (dx>0?'R':'L') : (dy>0?'D':'U'));
+});
+const KEYS = {ArrowLeft:'L',ArrowRight:'R',ArrowUp:'U',ArrowDown:'D',a:'L',d:'R',w:'U',s:'D',A:'L',D:'R',W:'U',S:'D'};
+document.addEventListener('keydown', e=>{
+  if (KEYS[e.key]){ e.preventDefault(); move(KEYS[e.key]); }
+  else if (e.key==='z'||e.key==='Z') document.getElementById('undo').click();
+});
+document.getElementById('undo').onclick=()=>{ if (S.done || S.anim || !S.hist.length) return; S.pos=S.hist.pop(); S.trail.pop(); if (!S.trail.length) S.trail=[S.pos.slice()]; update(); };
+document.getElementById('reset').onclick=()=>{ if (S.done || S.anim) return; S.pos=[S.P.sx,S.P.sy]; S.hist=[]; S.trail=[S.pos.slice()]; update(); };
+document.getElementById('done').onclick=()=>{ if (!S.done && S.used) finish(false); };
+document.getElementById('rand').onclick=()=>{ const n=Math.floor(Math.random()*1e6); load('rand-'+n, 'R'+n); };
+document.getElementById('daily').onclick=()=>{ const d=todayInfo(); load(d.salt, d.num); };
+document.getElementById('sol').onclick=()=>{ S.showSol=!S.showSol; draw(); };
+
+function finish(won){
+  S.done = true;
+  if (!won) S.showSol = true;
+  update();
+  const par = S.P.par;
+  const title = !won ? 'Out of tilts' : S.used===par ? 'Flawless' : S.used<=par+2 ? 'Smooth' : 'Just made it';
+  const sq = {good:'🟩', meh:'🟨', bad:'🟥'};
+  const share = `Tilt #${S.num} ${won ? S.used : 'X'}/${S.budget}\n${S.log.map(v=>sq[v]).join('')}`;
+  document.getElementById('rTitle').textContent = title;
+  document.getElementById('rSub').textContent = won
+    ? `On the star in ${S.used} tilt${S.used>1?'s':''} (minimum ${par}).`
+    : `A shortest route is ${S.P.sol.map(d=>ARROW[d]).join(' ')}. It's drawn in gold on the board.`;
+  document.getElementById('rShare').textContent = share;
+  document.getElementById('result').hidden = false;
+}
+document.getElementById('close').onclick=()=>{ document.getElementById('result').hidden=true; };
+document.getElementById('copy').onclick=async(e)=>{
+  const txt=document.getElementById('rShare').textContent;
+  try { await navigator.clipboard.writeText(txt); e.target.textContent='Copied!'; }
+  catch { const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy'); e.target.textContent='Copied!';}catch{} ta.remove(); }
+};
+
+window.addEventListener('resize', resize);
+const d=todayInfo(); load(d.salt, d.num); resize();
+window.__tilt = { get S(){return S;}, move, load, slide, distToGoal };
+})();
+</script>
+</body>
+</html>
