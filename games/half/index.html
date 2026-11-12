@@ -19,11 +19,14 @@
   .stats div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center}
   .stats b{display:block;font-size:22px}
   .stats span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
-  .map-wrap{position:relative;width:100%;aspect-ratio:1/1;border-radius:10px;overflow:hidden;border:6px solid #2a3a4a;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+  .map-wrap{position:relative;width:100%;aspect-ratio:1/1;border-radius:10px;overflow:hidden;border:6px solid #1f3d35;box-shadow:0 8px 30px rgba(0,0,0,.5)}
   #map{width:100%;height:100%;display:block;cursor:grab;touch-action:none}
-  .island{text-align:center;font-size:13px;color:var(--muted);margin:8px 0 0;letter-spacing:.06em}
-  .island b{color:var(--text)}
-  button{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;cursor:pointer}
+  .what{text-align:center;font-size:14px;margin:10px 0 0}
+  .what b{color:var(--text)}
+  .legend{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 12px;font-size:13px;color:var(--muted);margin-top:6px}
+  .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:4px;border:1px solid rgba(255,255,255,.25)}
+  .legend b{color:var(--text)}
+  button,select{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;cursor:pointer}
   button:hover{border-color:#4b5563}
   #cut{background:#1f3a5a;border-color:var(--accent);font-weight:700}
   .row{display:flex;gap:8px;margin:12px 0 8px}
@@ -32,7 +35,9 @@
   #done{border-color:#5a4a1f}
   ol.log{margin:4px 0 0;padding-left:22px;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
   details{margin-top:8px;color:var(--muted);font-size:13px}
-  details .row{margin-top:8px}
+  details .row{margin-top:8px;align-items:center}
+  details select{flex:1;min-width:0;padding:8px}
+  details label{display:flex;gap:6px;align-items:center;white-space:nowrap}
   .how{margin-top:14px;color:var(--muted);font-size:13px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
   .how b{color:var(--text)}
   .result{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:16px}
@@ -47,7 +52,7 @@
 <div class="app">
   <header>
     <h1>HALF</h1>
-    <div class="sub"><a href="../../" style="color:inherit">← All games</a> · Puzzle #<span id="num"></span> · Split the island in two</div>
+    <div class="sub"><a href="../../" style="color:inherit">← All games</a> · Puzzle #<span id="num"></span> · <span id="tier"></span> · Cut it in half</div>
   </header>
 
   <div class="stats">
@@ -57,7 +62,8 @@
   </div>
 
   <div class="map-wrap"><canvas id="map"></canvas></div>
-  <div class="island">The island of <b id="name"></b></div>
+  <div class="what">Today: <b id="name"></b> · <span id="mode"></span></div>
+  <div class="legend" id="legend"></div>
 
   <div class="row">
     <button class="sm" id="ccw" aria-label="Rotate counterclockwise">⟲</button>
@@ -76,12 +82,19 @@
       <button id="sol">Reveal solution</button>
       <button id="daily">Back to daily</button>
     </div>
+    <div class="row">
+      <select id="pick" aria-label="Pick an object"></select>
+      <label><input type="checkbox" id="weights"> Weights</label>
+      <button id="load" style="flex:0 0 auto">Load</button>
+    </div>
   </details>
 
   <div class="how">
-    <b>How to play:</b> draw one straight border through the capital ★ that splits the island into two halves of equal area. Exactly one angle does it.
-    Drag on the map to swing the line around the capital, fine-tune with ⟲ ⟳, then press Cut. Each cut tells you how the land was split.
+    <b>How to play:</b> make one straight cut through the pin ● that splits the object into two halves of equal size. Exactly one angle does it.
+    Drag on the board to swing the knife around the pin, fine-tune with ⟲ ⟳, then press Cut. Each cut tells you how it split.
+    <b>Weight days:</b> some days the object is made of materials with different weights, shown under the board, and the halves must weigh the same.
     <b>You can fail:</b> you get 4 cuts. Land within half a point of 50/50 to win. Fewest cuts wins.
+    Easy objects early in the week, holes and scattered pieces midweek, weights at the weekend.
     Keys: ←/→ rotate (hold Shift for big steps), Enter to cut.
   </div>
 </div>
@@ -103,72 +116,298 @@ const W = 400, BUDGET = 4, TOL = 0.5, D2R = Math.PI/180;
 function hashStr(s){ let h = 2166136261>>>0; for (const c of s){ h ^= c.charCodeAt(0); h = Math.imul(h,16777619)>>>0; } return h; }
 function rng32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a>>>15, 1 | a); t = t + Math.imul(t ^ t>>>7, 61 | t) ^ t; return ((t ^ t>>>14)>>>0) / 4294967296; }; }
 function todayInfo(){ const d=new Date(); const num=Math.floor((Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())-Date.UTC(2026,10,1))/864e5)+1; return {salt:'day-'+num, num}; }
+function shuffled(arr, seed){ const r=rng32(hashStr(seed)), a=arr.slice(); for (let i=a.length-1;i>0;i--){ const j=Math.floor(r()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
-// ---------- geometry ----------
-function area(p){ let s=0; for (let i=0,j=p.length-1;i<p.length;j=i++) s += p[j][0]*p[i][1] - p[i][0]*p[j][1]; return Math.abs(s)/2; }
-// keep the part of the polygon on one side of the line through C at angle th (half-plane clip)
-function clip(poly, C, th, sign){
-  const dx=Math.cos(th), dy=Math.sin(th), sd=p=>sign*(dx*(p[1]-C[1]) - dy*(p[0]-C[0])), out=[];
-  for (let i=0;i<poly.length;i++){
-    const a=poly[i], b=poly[(i+1)%poly.length], sa=sd(a), sb=sd(b);
-    if (sa>=0) out.push(a);
-    if ((sa>=0)!==(sb>=0)){ const t=sa/(sa-sb); out.push([a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t]); }
+// ---------- materials ----------
+// weight is relative; it only matters on weight days. Everything else counts as 1.
+const MAT = {
+  steel:{name:'Steel', c:'#a9b3be', w:4}, rubber:{name:'Rubber', c:'#4a4f57', w:2}, glass:{name:'Glass', c:'#a8dcef', w:2},
+  ceramic:{name:'Ceramic', c:'#efe6d6', w:2}, graphite:{name:'Graphite', c:'#3a3a3a', w:2}, stone:{name:'Stone', c:'#9b958b', w:3},
+  wood:{name:'Wood', c:'#c08a52', w:1}, plastic:{name:'Plastic', c:'#e0605a', w:1}, fabric:{name:'Fabric', c:'#5a86d8', w:1},
+  leather:{name:'Leather', c:'#8a5632', w:1}, land:{name:'Land', c:'#9bb56a', w:1},
+};
+const MAXW = 4;
+const DAY_COLORS = ['#e07a5f','#7fb69a','#f2c56b','#7aa2d6','#c792d8','#e8916b','#6fc2c0'];
+
+// ---------- object library ----------
+// Each object is a list of parts in its own units (roughly 100 across), drawn in order: later parts cover
+// earlier ones, and `cut` parts punch holes in what's already drawn. Shapes: circle, ellipse, rect, capsule
+// (thick line with round ends), poly (optionally smoothed), tube (a stroked polyline).
+// Tags: holes / pieces put an object in the midweek tier; mats (several materials) makes it eligible for weight days.
+const OBJ = {
+  pan:{name:'a frying pan', tags:['mats'], build(r,R){ const rad=R(24,32), L=R(36,56), hw=R(6,8.5); return [
+    {t:'capsule',x1:rad*0.7,y1:0,x2:rad+L,y2:R(-5,5),w:hw,m:'wood'},
+    {t:'capsule',x1:rad*0.8,y1:0,x2:rad+7,y2:0,w:hw*0.9,m:'steel'},
+    {t:'circle',cx:0,cy:0,r:rad,m:'steel'}, {t:'circle',cx:0,cy:0,r:rad*0.83,m:'steel',tone:0.86}]; }},
+  hammer:{name:'a hammer', tags:['mats'], build(r,R){ const L=R(70,95), hw=R(7,9.5), hl=R(34,46), ht=R(11,15);
+    const p=[{t:'capsule',x1:0,y1:2,x2:R(-3,3),y2:L,w:hw,m:'wood'},
+      {t:'rect',x:-hl*0.5,y:-ht/2,w:hl*0.78,h:ht,rad:2,m:'steel'},
+      {t:'rect',x:-hl*0.5-4,y:-ht/2-1.5,w:6,h:ht+3,rad:1.5,m:'steel',tone:0.88}];
+    if (r()<0.65) p.push({t:'poly',smooth:true,m:'steel',pts:[[hl*0.2,-ht/2],[hl*0.5,-ht*0.42],[hl*0.78,ht*0.1],[hl*0.88,ht*0.8],[hl*0.6,ht*0.15],[hl*0.25,ht/2]]});
+    else p.push({t:'circle',cx:hl*0.32,cy:0,r:ht*0.55,m:'steel'});
+    return p; }},
+  guitar:{name:'a guitar', tags:['holes'], build(r,R){ const r1=R(26,31), r2=r1*R(0.68,0.8), gap=r1*R(1.05,1.2), L=R(55,72), top=-gap-r2; return [
+    {t:'rect',x:-4.5,y:top-L,w:9,h:L+r2,rad:1,m:'wood',tone:0.8},
+    {t:'rect',x:-7,y:top-L-16,w:14,h:18,rad:3,m:'wood',tone:0.7},
+    {t:'circle',cx:0,cy:0,r:r1,m:'wood'}, {t:'circle',cx:0,cy:-gap,r:r2,m:'wood'},
+    {t:'circle',cx:0,cy:-gap*0.5,r:r1*0.62,m:'wood'},
+    {t:'circle',cx:0,cy:-gap*0.45,r:r1*R(0.24,0.32),cut:true},
+    {t:'rect',x:-9,y:r1*0.35,w:18,h:4,rad:1,m:'wood',tone:0.7}]; }},
+  key:{name:'a key', tags:['holes'], build(r,R){ const br=R(13,18), sl=R(45,62), p=[
+    {t:'circle',cx:0,cy:0,r:br,m:'steel'}, {t:'rect',x:br*0.6,y:-4,w:sl,h:8,rad:1.5,m:'steel'}];
+    const n=3+Math.floor(r()*2); for (let i=0;i<n;i++) p.push({t:'rect',x:br*0.6+sl*(0.45+0.5*i/n),y:2,w:sl*0.45/n,h:R(5,11),rad:0.5,m:'steel'});
+    p.push({t:'circle',cx:-br*0.15,cy:0,r:br*R(0.38,0.5),cut:true});
+    return p; }},
+  magnifier:{name:'a magnifying glass', tags:['mats'], build(r,R){ const rr=R(22,28), L=R(38,52), w=R(9,12), a=R(0.6,1.0), dx=Math.cos(a), dy=Math.sin(a); return [
+    {t:'capsule',x1:dx*rr*0.9,y1:dy*rr*0.9,x2:dx*(rr+L),y2:dy*(rr+L),w,m:'rubber'},
+    {t:'capsule',x1:dx*rr*0.9,y1:dy*rr*0.9,x2:dx*(rr+9),y2:dy*(rr+9),w:w*0.85,m:'steel'},
+    {t:'circle',cx:0,cy:0,r:rr,m:'steel'}, {t:'circle',cx:0,cy:0,r:rr*0.8,m:'glass'}]; }},
+  ladle:{name:'a ladle', tags:['holes'], build(r,R){ const br=R(15,20), L=R(60,80), bend=R(-12,12), ex=br*0.5+L*0.5+bend, ey=-br*0.6-L*0.85; return [
+    {t:'tube',pts:[[br*0.4,-br*0.7],[br*0.5+L*0.25+bend*0.3,-br*0.6-L*0.45],[ex,ey]],w:4.5,m:'steel'},
+    {t:'circle',cx:ex,cy:ey,r:5.5,m:'steel'}, {t:'circle',cx:ex,cy:ey,r:2.6,cut:true},
+    {t:'circle',cx:0,cy:0,r:br,m:'steel'}, {t:'circle',cx:0,cy:0,r:br*0.8,m:'steel',tone:0.86}]; }},
+  mug:{name:'a mug', tags:['holes'], build(r,R){ const w=R(36,46), h=R(44,56), hr=R(12,16), hx=w/2+hr*0.35, hy=R(-4,4); return [
+    {t:'circle',cx:hx,cy:hy,r:hr,m:'ceramic'}, {t:'circle',cx:hx,cy:hy,r:hr*0.58,cut:true},
+    {t:'rect',x:-w/2,y:-h/2,w,h,rad:5,m:'ceramic'}, {t:'rect',x:-w/2,y:-h/2,w,h:5,rad:2,m:'ceramic',tone:0.86}]; }},
+  scissors:{name:'a pair of scissors', tags:['holes','mats'], build(r,R){ const L=R(70,92), sp=R(0.5,2.5); return [
+    {t:'poly',m:'steel',pts:[[6,-7],[L,-sp],[L-4,sp*0.2+1],[6,3]]},
+    {t:'poly',m:'steel',tone:0.9,pts:[[6,7],[L*0.97,sp],[L*0.97-4,-sp*0.2-1],[6,-3]]},
+    {t:'circle',cx:-4,cy:-13,r:12,m:'plastic'}, {t:'circle',cx:-4,cy:-13,r:7,cut:true},
+    {t:'circle',cx:-4,cy:13,r:R(11,14),m:'plastic'}, {t:'circle',cx:-4,cy:13,r:7,cut:true},
+    {t:'circle',cx:14,cy:0,r:2.5,m:'steel',tone:0.7}]; }},
+  wrench:{name:'a wrench', tags:['holes'], build(r,R){ const L=R(60,80); return [
+    {t:'capsule',x1:0,y1:0,x2:L,y2:0,w:R(9,11),m:'steel'},
+    {t:'circle',cx:0,cy:0,r:R(10,13),m:'steel'}, {t:'circle',cx:L+4,cy:0,r:R(13,16),m:'steel'},
+    {t:'circle',cx:0,cy:0,r:6,cut:true}, {t:'rect',x:L+4,y:-5,w:20,h:10,cut:true}, {t:'circle',cx:L+4,cy:0,r:5,cut:true}]; }},
+  racket:{name:'a tennis racket', tags:['holes','mats'], build(r,R){ const rx=R(20,25), ry=rx*R(1.2,1.4), L=R(36,46); return [
+    {t:'poly',m:'plastic',pts:[[-6,ry*0.8],[0,ry*0.55],[6,ry*0.8],[4,ry+10],[-4,ry+10]]},
+    {t:'capsule',x1:0,y1:ry+6,x2:0,y2:ry+L,w:8.5,m:'rubber'},
+    {t:'ellipse',cx:0,cy:0,rx,ry,m:'plastic'}, {t:'ellipse',cx:0,cy:0,rx:rx-4,ry:ry-4,cut:true}]; }},
+  crescent:{name:'a crescent moon', tags:[], build(r,R){ return [
+    {t:'circle',cx:0,cy:0,r:40,m:'stone'}, {t:'circle',cx:R(12,22),cy:R(-14,-2),r:R(30,36),cut:true}]; }},
+  boot:{name:'a boot', tags:[], build(r,R){ const toe=R(28,42), sh=R(40,55); return [
+    {t:'poly',smooth:true,m:'leather',pts:[[0,0],[22,0],[23,sh],[30,sh+6],[22+toe,sh+8],[28+toe,sh+16],[26+toe,sh+22],[0,sh+22],[-3,sh*0.5]]},
+    {t:'rect',x:-4,y:sh+20,w:30+toe,h:5,rad:2,m:'rubber'}]; }},
+  boomerang:{name:'a boomerang', tags:[], build(r,R){ const a=R(50,72), b=R(36,60), ang=R(1.75,2.3); return [
+    {t:'capsule',x1:0,y1:0,x2:a,y2:0,w:R(12,15),m:'wood'},
+    {t:'capsule',x1:0,y1:0,x2:Math.cos(ang)*b,y2:Math.sin(ang)*b,w:R(11,14),m:'wood'}]; }},
+  tadpole:{name:'a tadpole', tags:[], build(r,R){ const hr=R(14,19), L=R(60,85), amp=R(4,9), ph=r()*6, up=[], dn=[];
+    for (let i=0;i<=24;i++){ const t=i/24, x=hr*0.6+L*t, y=Math.sin(t*5+ph)*amp*t, hw=hr*0.75*Math.pow(1-t,1.1)+0.6; up.push([x,y-hw]); dn.unshift([x,y+hw]); }
+    return [{t:'poly',smooth:true,m:'plastic',pts:[...up,...dn]}, {t:'ellipse',cx:0,cy:0,rx:hr,ry:hr*0.85,m:'plastic'}]; }},
+  grapes:{name:'a bunch of grapes', tags:['pieces'], build(r,R){ const g=R(6.5,8), sp=g*2+R(1.5,2.8), p=[];
+    [4,4,3,3,2,1].forEach((n,j)=>{ for (let i=0;i<n;i++){ if (j>0 && r()<0.12) continue;
+      p.push({t:'circle',cx:(i-(n-1)/2)*sp+(r()-0.5)*1.5, cy:j*sp*0.87+(r()-0.5)*1.5, r:g*R(0.85,1), m:'plastic'}); } });
+    p.push({t:'tube',pts:[[0,-2],[2,-12],[8,-18]],w:3,m:'wood'}, {t:'ellipse',cx:15,cy:-15,rx:9,ry:5,rot:-0.5,m:'plastic',tone:0.75});
+    return p; }},
+  islands:{name:'a chain of islands', tags:['pieces'], build(r,R){ const n=4+Math.floor(r()*3), placed=[], p=[];
+    for (let g=0; placed.length<n && g<300; g++){
+      const rad=placed.length===0?R(22,30):R(6,17), x=R(-55,55), y=R(-40,40);
+      if (placed.some(q=>Math.hypot(q.x-x,q.y-y)<q.rad*1.4+rad*1.4+6)) continue;
+      placed.push({x,y,rad});
+      const ph=[r()*6,r()*6,r()*6], pts=[];
+      for (let i=0;i<18;i++){ const t=i/18*Math.PI*2, f=1+0.22*Math.sin(2*t+ph[0])+0.14*Math.sin(3*t+ph[1])+0.08*Math.sin(5*t+ph[2]); pts.push([x+Math.cos(t)*rad*f, y+Math.sin(t)*rad*f]); }
+      p.push({t:'poly',smooth:true,m:'land',pts});
+    }
+    return p; }},
+  plate:{name:'a broken plate', tags:['pieces'], build(r,R){ const p=[{t:'circle',cx:0,cy:0,r:45,m:'ceramic'}, {t:'circle',cx:0,cy:0,r:33,m:'ceramic',tone:0.93}];
+    const n=2+Math.floor(r()*2);
+    for (let k=0;k<n;k++){ const a=r()*Math.PI*2, b=a+R(2.2,4), ox=R(-14,14), oy=R(-14,14), pts=[[Math.cos(a)*56,Math.sin(a)*56]];
+      for (let i=1;i<6;i++){ const t=i/6; pts.push([(1-t)*Math.cos(a)*56+t*Math.cos(b)*56+ox*Math.sin(Math.PI*t)+(r()-0.5)*8, (1-t)*Math.sin(a)*56+t*Math.sin(b)*56+oy*Math.sin(Math.PI*t)+(r()-0.5)*8]); }
+      pts.push([Math.cos(b)*56,Math.sin(b)*56]); p.push({t:'tube',pts,w:R(3.5,5),cut:true}); }
+    return p; }},
+  axe:{name:'an axe', tags:['mats'], build(r,R){ const L=R(75,95), bend=R(-6,6), s=R(0.85,1.2); return [
+    {t:'tube',pts:[[0,-6],[bend,L*0.5],[0,L]],w:R(7,9),m:'wood'},
+    {t:'poly',m:'steel',pts:[[-10,-9],[6,-8],[26*s,-20*s],[34*s,-6],[34*s,10],[26*s,22*s],[6,8],[-10,8]]}]; }},
+  pencil:{name:'a pencil', tags:['mats'], build(r,R){ const L=R(70,95), h=R(9,11), cl=R(14,18), el=R(8,13); return [
+    {t:'rect',x:0,y:-h/2,w:L,h,rad:0.5,m:'wood'},
+    {t:'poly',m:'wood',tone:1.25,pts:[[L,-h/2],[L+cl,0],[L,h/2]]},
+    {t:'poly',m:'graphite',pts:[[L+cl*0.62,-h*0.19],[L+cl,0],[L+cl*0.62,h*0.19]]},
+    {t:'rect',x:-9,y:-h/2-0.5,w:9,h:h+1,rad:0.5,m:'steel'},
+    {t:'rect',x:-9-el,y:-h/2,w:el+1,h,rad:3,m:'rubber'}]; }},
+  sword:{name:'a sword', tags:['mats'], build(r,R){ const L=R(70,95), bw=R(7,9), g=R(13,18); return [
+    {t:'rect',x:-27,y:-3.5,w:24,h:7,rad:2,m:'leather'}, {t:'circle',cx:-30,cy:0,r:R(5,7),m:'steel'},
+    {t:'poly',m:'steel',tone:1.1,pts:[[0,-bw/2],[L,-bw/2+1],[L+12,0],[L,bw/2-1],[0,bw/2]]},
+    {t:'rect',x:-4,y:-g,w:7,h:2*g,rad:2,m:'steel',tone:0.8}]; }},
+  golf:{name:'a golf club', tags:['mats'], build(r,R){ const L=R(85,105), hl=R(24,32); return [
+    {t:'capsule',x1:0,y1:0,x2:0,y2:L,w:3.5,m:'steel'}, {t:'capsule',x1:0,y1:0,x2:0,y2:R(24,30),w:6.5,m:'rubber'},
+    {t:'poly',smooth:true,m:'steel',tone:0.85,pts:[[-3,L-7],[3,L-5],[hl,L+1],[hl+3,L+8],[hl-2,L+12],[2,L+11],[-4,L+5]]}]; }},
+  note:{name:'a music note', tags:[], build(r,R){ const sh=R(48,62), gap=R(26,34), tilt=R(-6,6), p=[];
+    const head=(x,top)=>[{t:'ellipse',cx:x,cy:0,rx:10,ry:7.5,rot:-0.45,m:'plastic'}, {t:'rect',x:x+6.5,y:top,w:3.5,h:-top,m:'plastic'}];
+    if (r()<0.5){ p.push(...head(0,-sh), ...head(gap,-sh+tilt), {t:'poly',m:'plastic',pts:[[6.5,-sh],[gap+10,-sh+tilt],[gap+10,-sh+tilt+8],[6.5,-sh+8]]}); }
+    else p.push(...head(0,-sh), {t:'poly',smooth:true,m:'plastic',pts:[[8,-sh],[18,-sh+8],[26,-sh+22],[22,-sh+36],[22,-sh+22],[14,-sh+14],[8,-sh+12]]});
+    return p; }},
+  anchor:{name:'an anchor', tags:['holes'], build(r,R){ const H=R(70,85), sp=R(28,38), sw=R(18,28), cy=H/2-sp*0.75, a0=R(0.02,0.12), a1=R(0.82,0.98), arc=[];
+    for (let i=0;i<=10;i++){ const a=Math.PI*(a0+(a1-a0)*i/10); arc.push([Math.cos(a)*sp, cy+Math.sin(a)*sp]); }
+    const [lx,ly]=arc[10], [rx,ry]=arc[0];
+    return [{t:'rect',x:-4,y:-H/2,w:8,h:H,rad:1,m:'steel'}, {t:'rect',x:-sw,y:-H/2+9,w:2*sw,h:6,rad:3,m:'steel'},
+      {t:'circle',cx:0,cy:-H/2-6,r:9,m:'steel'}, {t:'circle',cx:0,cy:-H/2-6,r:5,cut:true},
+      {t:'tube',pts:arc,w:7,m:'steel'},
+      {t:'poly',m:'steel',pts:[[rx-4,ry+3],[rx+4,ry-R(10,16)],[rx+6,ry+4]]}, {t:'poly',m:'steel',pts:[[lx+4,ly+3],[lx-4,ly-R(10,16)],[lx-6,ly+4]]}]; }},
+  teapot:{name:'a teapot', tags:['holes'], build(r,R){ const rx=R(28,34), ry=R(20,25), hr=R(13,17), tx=rx+R(18,26), ty=-ry-R(4,12); return [
+    {t:'circle',cx:-rx-hr*0.35,cy:-2,r:hr,m:'ceramic'}, {t:'circle',cx:-rx-hr*0.35,cy:-2,r:hr*0.58,cut:true},
+    {t:'poly',m:'ceramic',pts:[[rx*0.6,14],[rx*0.95,8],[tx-3,ty+6],[tx+5,ty-1],[tx+1,ty-5],[rx*0.85,-10]]},
+    {t:'ellipse',cx:0,cy:0,rx,ry,m:'ceramic'}, {t:'ellipse',cx:0,cy:-ry+1,rx:rx*0.5,ry:5,m:'ceramic',tone:0.9},
+    {t:'circle',cx:0,cy:-ry-4,r:4,m:'ceramic',tone:0.85}, {t:'rect',x:-rx*0.55,y:ry-3,w:rx*1.1,h:6,rad:2,m:'ceramic',tone:0.9}]; }},
+  umbrella:{name:'an umbrella', tags:['mats'], build(r,R){ const rad=R(40,48), L=R(45,60), n=4+Math.floor(r()*3), pts=[];
+    for (let i=0;i<=20;i++){ const a=Math.PI+Math.PI*i/20; pts.push([Math.cos(a)*rad, Math.sin(a)*rad*0.8]); }
+    for (let k=n-1;k>=0;k--){ const x0=-rad+2*rad*(k+1)/n, x1=-rad+2*rad*k/n; pts.push([(x0+x1)/2,-6],[x1,0]); }
+    return [{t:'capsule',x1:0,y1:-rad*0.8-5,x2:0,y2:L,w:3.5,m:'steel'}, {t:'poly',smooth:true,m:'fabric',pts},
+      {t:'tube',pts:[[0,L],[0,L+7],[3,L+13],[9,L+15],[14,L+12],[15,L+6]],w:5,m:'wood'}]; }},
+  barbell:{name:'a barbell', tags:['mats'], build(r,R){ const L=R(110,130), p=[{t:'rect',x:0,y:-2,w:L,h:4,rad:2,m:'steel'}];
+    const left=1+Math.floor(r()*3), right=Math.floor(r()*2);
+    let x=14; for (let i=0;i<left;i++){ const h=R(36,50)-i*6; p.push({t:'rect',x,y:-h/2,w:7,h,rad:2,m:'rubber'}); x+=8; }
+    x=L-21; for (let i=0;i<right;i++){ const h=R(30,44); p.push({t:'rect',x,y:-h/2,w:7,h,rad:2,m:'rubber'}); x-=8; }
+    p.push({t:'rect',x:10,y:-5,w:4,h:10,rad:1,m:'steel'}, {t:'rect',x:L-14,y:-5,w:4,h:10,rad:1,m:'steel'});
+    return p; }},
+  island:{name:'a classic island', tags:['classic'], build(r,R){ const waves=[]; for (let k=2;k<=14;k++) waves.push([k, 0.3/Math.pow(k,1.2)*(0.3+r()*0.9), r()*Math.PI*2]);
+    const pts=[]; for (let i=0;i<200;i++){ const t=i/200*Math.PI*2; let f=1; for (const [k,a,ph] of waves) f+=a*Math.sin(k*t+ph); pts.push([Math.cos(t)*50*Math.max(0.3,f), Math.sin(t)*50*Math.max(0.3,f)]); }
+    return [{t:'poly',m:'land',pts}]; }},
+};
+const has = (k,t) => OBJ[k].tags.includes(t);
+const TIERS = {
+  easy:   Object.keys(OBJ).filter(k=>!has(k,'holes') && !has(k,'pieces') && !has(k,'classic')),
+  medium: Object.keys(OBJ).filter(k=>(has(k,'holes') || has(k,'pieces')) && !has(k,'mats')),
+  hard:   Object.keys(OBJ).filter(k=>has(k,'mats')),
+};
+// Puzzle #1 (Nov 1, 2026) is a Sunday. Mon/Tue easy, Wed/Thu holes and pieces, Fri-Sun weights.
+const tierFor = num => ['hard','easy','easy','medium','medium','hard','hard'][((num-1)%7+7)%7];
+
+// ---------- drawing parts ----------
+function shade(hex, k){
+  const n=parseInt(hex.slice(1),16), c=[n>>16,(n>>8)&255,n&255].map(v=> k<1 ? v*k : v+(255-v)*(k-1));
+  return '#'+c.map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('');
+}
+function rrect(c,x,y,w,h,r){ if (w<0){ x+=w; w=-w; } if (h<0){ y+=h; h=-h; } r=Math.min(r||0,w/2,h/2);
+  c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
+function polyPath(c, pts, smooth){
+  if (!smooth){ pts.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y)); c.closePath(); return; }
+  const n=pts.length, mid=(a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2], m0=mid(pts[n-1],pts[0]);
+  c.moveTo(m0[0],m0[1]);
+  for (let i=0;i<n;i++){ const p=pts[i], m=mid(p, pts[(i+1)%n]); c.quadraticCurveTo(p[0],p[1],m[0],m[1]); }
+  c.closePath();
+}
+function partPath(c, p){
+  c.beginPath();
+  if (p.t==='circle') c.arc(p.cx,p.cy,p.r,0,Math.PI*2);
+  else if (p.t==='ellipse') c.ellipse(p.cx,p.cy,p.rx,p.ry,p.rot||0,0,Math.PI*2);
+  else if (p.t==='rect') rrect(c,p.x,p.y,p.w,p.h,p.rad);
+  else if (p.t==='capsule'){ const a=Math.atan2(p.y2-p.y1,p.x2-p.x1), h=p.w/2; c.arc(p.x1,p.y1,h,a+Math.PI/2,a+Math.PI*1.5); c.arc(p.x2,p.y2,h,a-Math.PI/2,a+Math.PI/2); c.closePath(); }
+  else if (p.t==='poly') polyPath(c,p.pts,p.smooth);
+  else if (p.t==='tube') p.pts.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));
+}
+// mode 'mass': grey level = weight, holes black. mode 'look': colours, holes transparent.
+function drawParts(c, parts, mode, opt){
+  c.lineCap='round'; c.lineJoin='round';
+  for (const p of parts){
+    const isTube = p.t==='tube';
+    if (p.cut){
+      c.globalCompositeOperation = mode==='mass' ? 'source-over' : 'destination-out';
+      c.fillStyle = c.strokeStyle = '#000';
+    } else {
+      c.globalCompositeOperation = 'source-over';
+      let col;
+      if (mode==='mass'){ const g=Math.round((opt.weighted ? MAT[p.m].w/MAXW : 1)*255); col=`rgb(${g},${g},${g})`; }
+      else col = shade(opt.weighted || p.m==='land' ? MAT[p.m].c : opt.color, p.tone||1);
+      c.fillStyle = c.strokeStyle = col;
+    }
+    partPath(c,p);
+    if (isTube){ c.lineWidth=p.w; c.stroke(); } else c.fill();
+    if (mode==='look' && opt.edge){
+      c.globalCompositeOperation = p.cut ? 'source-atop' : 'source-over';
+      c.strokeStyle='rgba(0,0,0,.28)'; c.lineWidth=opt.edge;
+      if (!isTube){ partPath(c,p); c.stroke(); }
+    }
   }
+  c.globalCompositeOperation='source-over';
+}
+function samplePts(p){
+  const out=[], ring=(x,y,r,n=16)=>{ for (let i=0;i<n;i++){ const a=i/n*Math.PI*2; out.push([x+Math.cos(a)*r, y+Math.sin(a)*r]); } };
+  if (p.t==='circle') ring(p.cx,p.cy,p.r);
+  else if (p.t==='ellipse'){ const c=Math.cos(p.rot||0), s=Math.sin(p.rot||0); for (let i=0;i<16;i++){ const a=i/16*Math.PI*2, x=Math.cos(a)*p.rx, y=Math.sin(a)*p.ry; out.push([p.cx+x*c-y*s, p.cy+x*s+y*c]); } }
+  else if (p.t==='rect') out.push([p.x,p.y],[p.x+p.w,p.y],[p.x,p.y+p.h],[p.x+p.w,p.y+p.h]);
+  else if (p.t==='capsule'){ ring(p.x1,p.y1,p.w/2,8); ring(p.x2,p.y2,p.w/2,8); }
+  else if (p.t==='poly') out.push(...p.pts);
+  else if (p.t==='tube') p.pts.forEach(([x,y])=>ring(x,y,p.w/2,8));
   return out;
 }
-function inside(poly, x, y){ let c=false; for (let i=0,j=poly.length-1;i<poly.length;j=i++){ const [xi,yi]=poly[i],[xj,yj]=poly[j]; if ((yi>y)!==(yj>y) && x < (xj-xi)*(y-yi)/(yj-yi)+xi) c=!c; } return c; }
-function edgeDist(poly, x, y){ let m=Infinity; for (let i=0,j=poly.length-1;i<poly.length;j=i++){ const [ax,ay]=poly[j],[bx,by]=poly[i], vx=bx-ax, vy=by-ay, t=Math.max(0,Math.min(1,((x-ax)*vx+(y-ay)*vy)/(vx*vx+vy*vy))); m=Math.min(m, Math.hypot(ax+vx*t-x, ay+vy*t-y)); } return m; }
-function centroid(p){ let a=0,cx=0,cy=0; for (let i=0,j=p.length-1;i<p.length;j=i++){ const f=p[j][0]*p[i][1]-p[i][0]*p[j][1]; a+=f; cx+=(p[j][0]+p[i][0])*f; cy+=(p[j][1]+p[i][1])*f; } return a ? [cx/(3*a), cy/(3*a)] : p[0]; }
+// random rotation, mirror and stretch, then scale to fit the board
+function fitTransform(parts, r, still){
+  const th = still ? 0 : r()*Math.PI*2, flip = !still && r()<0.5 ? -1 : 1, sx=(0.88+r()*0.24)*flip, sy=0.88+r()*0.24;
+  const a=Math.cos(th)*sx, b=Math.sin(th)*sx, c=-Math.sin(th)*sy, d=Math.cos(th)*sy;
+  let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+  for (const p of parts) if (!p.cut) for (const [x,y] of samplePts(p)){ const X=a*x+c*y, Y=b*x+d*y; x0=Math.min(x0,X); x1=Math.max(x1,X); y0=Math.min(y0,Y); y1=Math.max(y1,Y); }
+  const k=Math.min(330/(x1-x0), 330/(y1-y0));
+  return [a*k,b*k,c*k,d*k, W/2-k*(x0+x1)/2, W/2-k*(y0+y1)/2, k];
+}
+
+// ---------- the weight map ----------
+const massCv = document.createElement('canvas'); massCv.width = massCv.height = W;
+const mctx = massCv.getContext('2d', {willReadFrequently:true});
+function rasterize(parts, tf, weighted){
+  mctx.setTransform(1,0,0,1,0,0); mctx.fillStyle='#000'; mctx.fillRect(0,0,W,W);
+  mctx.setTransform(tf[0],tf[1],tf[2],tf[3],tf[4],tf[5]);
+  drawParts(mctx, parts, 'mass', {weighted});
+  const px = mctx.getImageData(0,0,W,W).data, grid = new Float32Array(W*W);
+  let n=0; for (let i=0;i<W*W;i++){ grid[i]=px[i*4]/255; if (grid[i]>0.004) n++; }
+  const X=new Float32Array(n), Y=new Float32Array(n), Wt=new Float32Array(n); let j=0, total=0;
+  for (let i=0;i<W*W;i++) if (grid[i]>0.004){ X[j]=i%W+0.5; Y[j]=((i/W)|0)+0.5; Wt[j]=grid[i]; total+=grid[i]; j++; }
+  return {grid, X, Y, Wt, total};
+}
+// share of the weight on the left of the directed line through C at angle th
+function fracFn(M, C, stride=1){ const {X,Y,Wt}=M; let tot=0; for (let i=0;i<X.length;i+=stride) tot+=Wt[i];
+  return th=>{ const dx=Math.cos(th), dy=Math.sin(th); let s=0; for (let i=0;i<X.length;i+=stride) if (dx*(Y[i]-C[1]) - dy*(X[i]-C[0]) > 0) s+=Wt[i]; return s/tot; }; }
 
 // ---------- puzzle ----------
-const SYL = ['va','ren','mo','ka','thi','lor','sa','ben','dri','ol','mar','ys','tal','or','qui','sel','an','dor','ve','na'];
-function makeIsland(salt){
-  const r = rng32(hashStr('half|'+salt));
-  const name = (() => { const n=2+Math.floor(r()*2); let s=''; for (let i=0;i<n;i++) s+=SYL[Math.floor(r()*SYL.length)]; return s[0].toUpperCase()+s.slice(1); })();
-  for (let tries=0; tries<400; tries++){
-    const waves=[]; for (let k=2;k<=14;k++) waves.push([k, 0.3/Math.pow(k,1.2)*(0.3+r()*0.9), r()*Math.PI*2]);
-    const bumps=[]; const nb=1+Math.floor(r()*3);
-    for (let i=0;i<nb;i++) bumps.push([r()*Math.PI*2, 0.12+r()*0.22, (r()<0.65?1:-1)*(0.18+r()*0.32)]);
-    const M=260, raw=[]; let ok=true;
-    for (let i=0;i<M;i++){
-      const t=i/M*Math.PI*2; let f=1;
-      for (const [k,a,ph] of waves) f += a*Math.sin(k*t+ph);
-      for (const [c,w,h] of bumps){ const dd=Math.atan2(Math.sin(t-c),Math.cos(t-c)); f += h*Math.exp(-(dd/w)*(dd/w)); }
-      if (f<0.3){ ok=false; break; }
-      raw.push([Math.cos(t)*f, Math.sin(t)*f]);
-    }
-    if (!ok) continue;
-    let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
-    for (const [x,y] of raw){ x0=Math.min(x0,x); x1=Math.max(x1,x); y0=Math.min(y0,y); y1=Math.max(y1,y); }
-    const s=Math.min(330/(x1-x0), 330/(y1-y0));
-    const poly=raw.map(([x,y])=>[W/2+(x-(x0+x1)/2)*s, W/2+(y-(y0+y1)/2)*s]);
-    const total=area(poly), cen=centroid(poly);
-    const frac=(C,th)=>area(clip(poly,C,th,1))/total;
-    for (let c=0;c<60;c++){
-      const C=[35+r()*330, 35+r()*330];
-      if (!inside(poly,C[0],C[1]) || edgeDist(poly,C[0],C[1])<24 || Math.hypot(C[0]-cen[0],C[1]-cen[1])<30) continue;
-      // exactly one bisecting direction in [0, 180)
-      const n=360, g=[]; for (let i=0;i<=n;i++) g.push(frac(C, i/n*Math.PI)-0.5);
-      let roots=[]; for (let i=0;i<n;i++) if ((g[i]<0)!==(g[i+1]<0)) roots.push(i);
-      if (roots.length!==1) continue;
-      let lo=roots[0]/n*Math.PI, hi=(roots[0]+1)/n*Math.PI, glo=g[roots[0]];
-      for (let it=0;it<50;it++){ const mid=(lo+hi)/2, gm=frac(C,mid)-0.5; if ((gm<0)===(glo<0)){ lo=mid; glo=gm; } else hi=mid; }
-      const sol=(lo+hi)/2;
-      // must punish sloppy aim: 8 degrees off costs at least 1.5 points
-      if (Math.abs(frac(C,sol+8*D2R)-0.5)<0.015 || Math.abs(frac(C,sol-8*D2R)-0.5)<0.015) continue;
-      return {poly, total, C, sol, name, frac:th=>frac(C,th)};
+function makePuzzle(key, weighted, seed){
+  const r = rng32(hashStr('half|'+seed+'|'+key)), R = (a,b)=>a+r()*(b-a), obj = OBJ[key];
+  let fallback = null;
+  for (let attempt=0; attempt<14; attempt++){
+    const parts = obj.build(r, R), tf = fitTransform(parts, r, key==='island'), M = rasterize(parts, tf, weighted);
+    if (M.total < 2000) continue;
+    let cx=0, cy=0; for (let i=0;i<M.X.length;i++){ cx+=M.X[i]*M.Wt[i]; cy+=M.Y[i]*M.Wt[i]; } cx/=M.total; cy/=M.total;
+    const solid = (x,y) => x>=0 && y>=0 && x<W && y<W && M.grid[(y|0)*W+(x|0)] > 0.05;
+    for (let c=0; c<90; c++){
+      const i = Math.floor(r()*M.X.length), C=[M.X[i], M.Y[i]];
+      if (Math.hypot(C[0]-cx, C[1]-cy) < 28) continue;
+      let ok=true; for (let k=0;k<8 && ok;k++){ const a=k*Math.PI/4; ok = solid(C[0]+Math.cos(a)*11, C[1]+Math.sin(a)*11); }
+      if (!ok) continue;
+      // quick check on every third pixel, then the full one: exactly one bisecting angle in [0, 180)
+      const roots = (f, n) => { let g0=f(0)-0.5, out=[]; for (let s=1;s<=n;s++){ const g=f(s/n*Math.PI)-0.5; if ((g0<0)!==(g<0)) out.push(s); g0=g; } return out; };
+      if (roots(fracFn(M,C,3), 36).length!==1) continue;
+      const f = fracFn(M,C), rs = roots(f, 180);
+      if (rs.length!==1) continue;
+      let lo=(rs[0]-1)/180*Math.PI, hi=rs[0]/180*Math.PI, glo=f(lo)-0.5;
+      for (let it=0; it<40; it++){ const mid=(lo+hi)/2, gm=f(mid)-0.5; if ((gm<0)===(glo<0)){ lo=mid; glo=gm; } else hi=mid; }
+      const sol=(lo+hi)/2, sens=Math.min(Math.abs(f(sol+8*D2R)-0.5), Math.abs(f(sol-8*D2R)-0.5));
+      if (Math.abs(f(sol)-0.5) > 0.001) continue;                         // a thin part lined up with the cut makes the split jump past 50/50
+      if (Math.abs(f(sol+0.5*D2R)-f(sol-0.5*D2R))*100 > 4) continue;     // steeper than 4 points per degree is too fiddly to hit
+      const P = {key, name:obj.name, parts, tf, weighted, M, C, sol, frac:f, sens};
+      if (sens >= 0.012) return P;                        // 8 degrees off must cost at least 1.2 points
+      if (!fallback || sens > fallback.sens) fallback = P;
     }
   }
+  return fallback;
 }
 
 // ---------- state ----------
 let S;
-function load(salt, num){
-  const I = makeIsland(salt);
-  const rs = rng32(hashStr('start|'+salt));
-  S = {salt, num, I, th:(rs()*180)*D2R, cuts:[], done:false, showSol:false};
+function pickDaily(num){
+  const tier = tierFor(num); let k=0; for (let n=1;n<num;n++) if (tierFor(n)===tier) k++;
+  const list = shuffled(TIERS[tier], 'half-order-'+tier);
+  return {key:list[k % list.length], weighted: tier==='hard', tier, color: DAY_COLORS[num % DAY_COLORS.length]};
+}
+function load(seed, num, pick){
+  const I = makePuzzle(pick.key, pick.weighted, seed);
+  const rs = rng32(hashStr('start|'+seed));
+  S = {seed, num, I, tier:pick.tier, color:pick.color||DAY_COLORS[0], th:(rs()*180)*D2R, cuts:[], done:false, showSol:false, art:null};
   document.getElementById('num').textContent = num;
+  document.getElementById('tier').textContent = {easy:'Easy', medium:'Medium', hard:'Hard', test:'Test'}[pick.tier] || '';
   document.getElementById('name').textContent = I.name;
+  document.getElementById('mode').textContent = I.weighted ? 'split by weight' : 'split by size';
+  const mats = [...new Set(I.parts.filter(p=>!p.cut).map(p=>p.m))];
+  document.getElementById('legend').innerHTML = I.weighted
+    ? mats.sort((a,b)=>MAT[b].w-MAT[a].w).map(m=>`<span><i style="background:${MAT[m].c}"></i>${MAT[m].name} <b>×${MAT[m].w}</b></span>`).join('')
+    : '';
   document.getElementById('result').hidden = true;
   update();
 }
@@ -182,48 +421,56 @@ function update(){
   document.getElementById('last').textContent = last ? `${Math.round(last.a)}/${Math.round(last.b)}` : '–';
   document.getElementById('best').textContent = S.cuts.length ? Math.min(...S.cuts.map(c=>c.off)).toFixed(1) : '–';
   document.getElementById('log').innerHTML = S.cuts.map(c=>`<li>${fmt(c)} — ${c.off<=TOL ? '<b style="color:var(--good)">even split</b>' : `${c.off.toFixed(1)} points off`}</li>`).join('');
-  draw();
+  S.art = null; draw();
 }
 
 // ---------- rendering ----------
 const cv=document.getElementById('map'), ctx=cv.getContext('2d');
-function resize(){ const r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1; cv.width=r.width*dpr; cv.height=r.height*dpr; draw(); }
-function polyPath(p){ ctx.beginPath(); p.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y)); ctx.closePath(); }
+const artCv=document.createElement('canvas'), actx=artCv.getContext('2d');
+function resize(){ const r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1; cv.width=r.width*dpr; cv.height=r.height*dpr; if (S) S.art=null; draw(); }
+function halfPlane(c, C, th, sign){ const dx=Math.cos(th), dy=Math.sin(th), nx=-dy*sign, ny=dx*sign, L=900;
+  c.beginPath(); c.moveTo(C[0]-dx*L,C[1]-dy*L); c.lineTo(C[0]+dx*L,C[1]+dy*L); c.lineTo(C[0]+dx*L+nx*L,C[1]+dy*L+ny*L); c.lineTo(C[0]-dx*L+nx*L,C[1]-dy*L+ny*L); c.closePath(); }
+function renderArt(){
+  const I=S.I, sc=cv.width/W, t=I.tf;
+  artCv.width=cv.width; artCv.height=cv.height;
+  actx.setTransform(t[0]*sc,t[1]*sc,t[2]*sc,t[3]*sc,t[4]*sc,t[5]*sc);
+  drawParts(actx, I.parts, 'look', {weighted:I.weighted, color:S.color, edge:1.1/t[6]});
+  const last=S.cuts[S.cuts.length-1];
+  if (last){
+    actx.setTransform(sc,0,0,sc,0,0); actx.globalCompositeOperation='source-atop';
+    actx.fillStyle='rgba(60,120,255,.28)'; halfPlane(actx,I.C,last.th,1); actx.fill();
+    actx.fillStyle='rgba(255,150,40,.28)'; halfPlane(actx,I.C,last.th,-1); actx.fill();
+    actx.globalCompositeOperation='source-over';
+  }
+  S.art = artCv;
+}
 function line(C, th){ const dx=Math.cos(th)*600, dy=Math.sin(th)*600; ctx.beginPath(); ctx.moveTo(C[0]-dx,C[1]-dy); ctx.lineTo(C[0]+dx,C[1]+dy); ctx.stroke(); }
-function star(x,y,R,r){ ctx.beginPath(); for (let i=0;i<10;i++){ const a=-Math.PI/2+i*Math.PI/5, d=i%2?r:R; ctx.lineTo(x+Math.cos(a)*d, y+Math.sin(a)*d); } ctx.closePath(); }
 function draw(){
   if (!S) return;
-  const sc=cv.width/W; ctx.setTransform(sc,0,0,sc,0,0);
-  const {poly, C} = S.I;
-  ctx.fillStyle='#244b66'; ctx.fillRect(0,0,W,W);
-  ctx.strokeStyle='rgba(255,255,255,.05)'; ctx.lineWidth=1;
-  for (let i=40;i<W;i+=40){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,W); ctx.moveTo(0,i); ctx.lineTo(W,i); ctx.stroke(); }
-  // shallows + land
-  ctx.save(); polyPath(poly); ctx.strokeStyle='rgba(140,200,220,.25)'; ctx.lineWidth=10; ctx.lineJoin='round'; ctx.stroke(); ctx.restore();
-  const last = S.cuts[S.cuts.length-1];
-  if (last){
-    const A=clip(poly,C,last.th,1), B=clip(poly,C,last.th,-1);
-    ctx.fillStyle='#86a95a'; polyPath(A); ctx.fill();
-    ctx.fillStyle='#c4a96b'; polyPath(B); ctx.fill();
-  } else { ctx.fillStyle='#9bb56a'; polyPath(poly); ctx.fill(); }
-  polyPath(poly); ctx.strokeStyle='#4b5f33'; ctx.lineWidth=1.5; ctx.stroke();
-  // old cuts
-  ctx.save(); polyPath(poly); ctx.clip();
-  ctx.lineWidth=1.2; ctx.strokeStyle='rgba(40,30,20,.35)'; ctx.setLineDash([4,4]);
+  if (!S.art) renderArt();
+  const sc=cv.width/W, {C}=S.I;
+  ctx.setTransform(sc,0,0,sc,0,0);
+  ctx.fillStyle='#2b5a4d'; ctx.fillRect(0,0,W,W);
+  for (let i=20;i<W;i+=20){ ctx.strokeStyle = i%100 ? 'rgba(255,255,255,.06)' : 'rgba(255,255,255,.13)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,W); ctx.moveTo(0,i); ctx.lineTo(W,i); ctx.stroke(); }
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.shadowColor='rgba(0,0,0,.45)'; ctx.shadowBlur=10*sc; ctx.shadowOffsetY=3*sc; ctx.drawImage(S.art,0,0); ctx.restore();
+  ctx.setTransform(sc,0,0,sc,0,0);
+  ctx.lineWidth=1.2; ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.setLineDash([4,4]);
   S.cuts.slice(0,-1).forEach(c=>line(C,c.th)); ctx.setLineDash([]);
-  if (last){ ctx.strokeStyle='rgba(40,30,20,.8)'; ctx.lineWidth=1.8; line(C,last.th); }
-  ctx.restore();
+  const last=S.cuts[S.cuts.length-1];
   if (last){
-    const fA=S.I.frac(last.th)*100;
-    [[clip(poly,C,last.th,1),fA],[clip(poly,C,last.th,-1),100-fA]].forEach(([p,v])=>{
-      const [x,y]=centroid(p); ctx.font='bold 13px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.lineWidth=3; ctx.strokeStyle='rgba(255,255,255,.8)'; ctx.strokeText(v.toFixed(1)+'%',x,y); ctx.fillStyle='#1d2a14'; ctx.fillText(v.toFixed(1)+'%',x,y);
-    });
+    ctx.strokeStyle='rgba(20,20,20,.85)'; ctx.lineWidth=1.8; line(C,last.th);
+    // label each half at its centre of weight
+    const {X,Y,Wt}=S.I.M, dx=Math.cos(last.th), dy=Math.sin(last.th), acc=[[0,0,0],[0,0,0]];
+    for (let i=0;i<X.length;i++){ const s = dx*(Y[i]-C[1]) - dy*(X[i]-C[0]) > 0 ? 0 : 1; acc[s][0]+=X[i]*Wt[i]; acc[s][1]+=Y[i]*Wt[i]; acc[s][2]+=Wt[i]; }
+    const tot=acc[0][2]+acc[1][2];
+    acc.forEach(([x,y,w])=>{ if (!w) return; const t=(w/tot*100).toFixed(1)+'%';
+      ctx.font='bold 13px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.lineWidth=3; ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.strokeText(t,x/w,y/w); ctx.fillStyle='#14202a'; ctx.fillText(t,x/w,y/w); });
   }
   if (S.showSol){ ctx.strokeStyle='rgba(242,182,49,.95)'; ctx.lineWidth=2.2; ctx.setLineDash([7,5]); line(C,S.I.sol); ctx.setLineDash([]); }
-  // the line being aimed
   if (!S.done){ ctx.strokeStyle='rgba(255,255,255,.95)'; ctx.lineWidth=2; line(C,S.th); }
-  ctx.fillStyle='#d23b3b'; ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; star(C[0],C[1],8,3.6); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#fff'; ctx.strokeStyle='#14202a'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(C[0],C[1],6,0,7); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#d23b3b'; ctx.beginPath(); ctx.arc(C[0],C[1],2.4,0,7); ctx.fill();
 }
 
 // ---------- interaction ----------
@@ -246,25 +493,35 @@ function aimFromEvent(e){
 cv.addEventListener('pointerdown', e=>{ if (S.done) return; dragging=true; cv.setPointerCapture(e.pointerId); aimFromEvent(e); });
 cv.addEventListener('pointermove', e=>{ if (dragging) aimFromEvent(e); });
 cv.addEventListener('pointerup', ()=>{ dragging=false; });
-document.getElementById('ccw').onclick=()=>rotate(-0.25);
-document.getElementById('cw').onclick=()=>rotate(0.25);
+document.getElementById('ccw').onclick=()=>rotate(-0.1);
+document.getElementById('cw').onclick=()=>rotate(0.1);
 document.getElementById('cut').onclick=()=>cut();
 document.addEventListener('keydown', e=>{
-  if (e.key==='ArrowLeft'){ e.preventDefault(); rotate(e.shiftKey?-2:-0.25); }
-  else if (e.key==='ArrowRight'){ e.preventDefault(); rotate(e.shiftKey?2:0.25); }
+  if (e.target.tagName==='SELECT') return;
+  if (e.key==='ArrowLeft'){ e.preventDefault(); rotate(e.shiftKey?-2:-0.1); }
+  else if (e.key==='ArrowRight'){ e.preventDefault(); rotate(e.shiftKey?2:0.1); }
   else if (e.key==='Enter'){ e.preventDefault(); cut(); }
 });
 document.getElementById('done').onclick=()=>{ if (!S.done && S.cuts.length) finish(false); };
-document.getElementById('rand').onclick=()=>{ const n=Math.floor(Math.random()*1e6); load('rand-'+n, 'R'+n); };
-document.getElementById('daily').onclick=()=>{ const d=todayInfo(); load(d.salt, d.num); };
+document.getElementById('rand').onclick=()=>{
+  const n=Math.floor(Math.random()*1e6), tier=['easy','medium','hard'][n%3], list=TIERS[tier];
+  load('rand-'+n, 'R'+n, {key:list[Math.floor(Math.random()*list.length)], weighted:tier==='hard', tier, color:DAY_COLORS[n%DAY_COLORS.length]});
+};
+document.getElementById('daily').onclick=()=>{ const d=todayInfo(); load(d.salt, d.num, pickDaily(d.num)); };
 document.getElementById('sol').onclick=()=>{ S.showSol=!S.showSol; draw(); };
+const pick=document.getElementById('pick');
+pick.innerHTML = Object.keys(OBJ).map(k=>`<option value="${k}">${OBJ[k].name.replace(/^an? (pair of )?/,'')}${has(k,'mats')?'':' (no weights)'}</option>`).join('');
+document.getElementById('load').onclick=()=>{
+  const k=pick.value, n=Math.floor(Math.random()*1e6), w=document.getElementById('weights').checked && has(k,'mats');
+  load('pick-'+n, 'T'+n, {key:k, weighted:w, tier:'test', color:DAY_COLORS[n%DAY_COLORS.length]});
+};
 
 function finish(won){
   S.done = true;
   if (!won) S.showSol = true;
   update();
   const n = S.cuts.length, best = Math.min(...S.cuts.map(c=>c.off));
-  const title = !won ? 'Border dispute' : n===1 ? 'Perfect partition' : n===2 ? 'Fair split' : 'Just made it';
+  const title = !won ? 'Uneven' : n===1 ? 'Perfect cut' : n===2 ? 'Fair split' : 'Just made it';
   const sq = c => c.off<=TOL ? '🟩' : c.off<=2 ? '🟨' : c.off<=5 ? '🟧' : '🟥';
   const share = `Half #${S.num} ${won ? n : 'X'}/${BUDGET}\n${S.cuts.map(sq).join('')}`;
   document.getElementById('rTitle').textContent = title;
@@ -282,8 +539,8 @@ document.getElementById('copy').onclick=async(e)=>{
 };
 
 window.addEventListener('resize', resize);
-const d=todayInfo(); load(d.salt, d.num); resize();
-window.__half = { get S(){return S;}, cut, setAngle, load, makeIsland };
+const d=todayInfo(); load(d.salt, d.num, pickDaily(d.num)); resize();
+window.__half = { get S(){return S;}, cut, setAngle, load, makePuzzle, pickDaily, OBJ, TIERS, tierFor };
 })();
 </script>
 </body>

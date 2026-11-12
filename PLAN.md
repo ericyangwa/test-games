@@ -58,6 +58,17 @@ Eric picked the four quickest games: Tilt, Slingshot, Sonar and Half. Each is `g
 - **Sonar.** 25×25 sea with generated islands. A ping returns the straight-line distance to the wreck, rounded to whole squares; ping the wreck's square to win. 6 pings. Emoji by range.
 - **Half.** Changed from the backlog version in two ways. (1) The island is generated, not a real country, so there's no outline data to ship; real countries could replace it later (e.g. Natural Earth, which is public domain). (2) The border must pass through a capital ★, which makes the answer a single angle (the generator checks there's exactly one) instead of any line that bisects the area. 4 cuts, each reports the split; win within 0.5 points of 50/50.
 
+### Half v2: awkward objects (built Nov 11, 2026)
+
+Eric's feedback: islands are too easy, and Half looked like the most promising game. Islands are compact blobs, and the eye judges their area well. v2 uses lopsided everyday objects instead.
+
+- **Decided: stay 2D, not 3D.** On a flat screen players can't judge volume (hidden parts, ambiguous depth), so 3D guesses would feel like luck. A 3D cut is also a plane, which is fiddly to aim on a phone, and much more work to build. The "different weights" idea works in 2D through materials.
+- **26 objects** drawn from simple shapes, each varied daily by rotation, mirroring, stretch and proportions: frying pan, hammer, guitar, key, magnifying glass, ladle, mug, scissors, wrench, tennis racket, crescent moon, boot, boomerang, tadpole, bunch of grapes, chain of islands, broken plate, axe, pencil, sword, golf club, music note, anchor, teapot, umbrella, barbell (plus the classic island, in Prototype tools only). What makes them hard: long thin parts that look big but hold little area, holes, hooks and curves, and scattered pieces.
+- **Weekday difficulty:** Mon/Tue solid shapes; Wed/Thu shapes with holes or separate pieces; Fri–Sun weight days, where materials have stated weights (steel ×4, stone ×3, rubber/glass/ceramic/graphite ×2, wood/plastic/fabric/leather ×1) and the halves must weigh the same. Each tier cycles through its objects before repeating.
+- **Scoring is pixel by pixel:** the object is drawn into a 400×400 weight map (grey level = weight), which handles holes, pieces and materials with no geometry code. The generator only accepts a pin position with exactly one bisecting angle, an exact 50/50 (thin parts lined up with the cut can make the split jump past it), a split that moves at least 1.2 points within 8°, and no more than 4 points per degree (so the ⟲ ⟳ buttons, now 0.1° steps, can hit it).
+- **Prototype tools** can load any object, with or without weights, to compare.
+- **Ideas not built yet:** more objects (or game-icons.net silhouettes, CC BY 3.0, credit required); real country outlines; a "3D look" (shading only, same rules).
+
 ## Polyglot (built Nov 2026, not yet playtested)
 
 `games/polyglot/index.html`. Heardle for languages: hear a sentence, name the language in 6 guesses. Each miss or skip unlocks more: a short snippet, then half, then the whole sentence, then written clues (the sentence in its own script, the language family, where it's spoken).
