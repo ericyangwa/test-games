@@ -427,6 +427,19 @@ function progress(est){
     playing.raf=requestAnimationFrame(tick); };
   playing={raf:requestAnimationFrame(tick)};
 }
+// iPhones mute Web Audio when the ring/silent switch is on silent. Asking for the "playback"
+// audio session (Safari 17+), or on older iOS looping a silent <audio> element, makes it play anyway.
+let silentTag=null;
+function unmuteIOS(){
+  try { if (navigator.audioSession){ navigator.audioSession.type='playback'; return; } } catch {}
+  if (!silentTag){
+    silentTag=document.createElement('audio');
+    silentTag.src='data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+    silentTag.loop=true; silentTag.setAttribute('playsinline',''); silentTag.setAttribute('x-webkit-airplay','deny');
+  }
+  silentTag.play().catch(()=>{});
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden && silentTag) silentTag.pause(); });
 function play(){
   if (playing){ stopAudio(); return; }
   const st = stage();
@@ -434,7 +447,9 @@ function play(){
     if (!CLIPS[clipKey()]) return voiceNote();
     // the AudioContext has to be created and resumed inside the click, or Safari keeps it silent
     actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-    if (actx.state==='suspended') actx.resume();
+    unmuteIOS();
+    // iOS reports 'interrupted' (not 'suspended') after a call or a trip to another app
+    if (actx.state!=='running') actx.resume().catch(()=>{});
     const key = clipKey(), btn = document.getElementById('play');
     playing = {raf:0}; btn.textContent='…';
     loadClip(key).then(buf=>{
