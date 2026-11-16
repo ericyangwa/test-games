@@ -46,7 +46,10 @@
   .err{min-height:18px;font-size:13px;color:var(--warn);margin-top:4px}
   .guesses{display:grid;gap:6px;margin-top:6px}
   .g{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:8px 10px;font-size:14px}
-  .g .k{color:var(--muted);font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+  .g .k{color:var(--muted);font-size:12px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .g .rel{display:block;color:var(--muted);font-size:12px;font-weight:400;margin-top:1px}
+  .clue .sub{display:block;color:var(--muted);font-size:12px;margin-top:3px}
+  .how .key{display:block;margin-top:4px}
   .g .arrow{font-size:18px;width:22px;text-align:center}
   .g.c-good{border-left-color:var(--good)} .g.c-branch{border-left-color:var(--warn)} .g.c-family{border-left-color:var(--orange)} .g.c-far{border-left-color:var(--bad)} .g.c-skip{border-left-color:#555}
   details{margin-top:8px;color:var(--muted);font-size:13px}
@@ -85,7 +88,7 @@
     <div class="note" id="voiceNote" hidden></div>
     <div class="clues">
       <div class="clue" id="c3"><small>Clue after 3 misses</small><span>Written sentence</span></div>
-      <div class="clue" id="c4"><small>Clue after 4 misses</small><span>Language family</span></div>
+      <div class="clue" id="c4"><small>Clue after 4 misses</small><span>How many speak it</span></div>
       <div class="clue" id="c5"><small>Clue after 5 misses</small><span>Where it's spoken</span></div>
     </div>
   </div>
@@ -113,7 +116,10 @@
 
   <div class="how">
     <b>How to play:</b> listen to a sentence and name the language. At first you only hear the start of it. Every miss or skip lets you hear more, and after 3 misses you get written clues.
-    <b>Misses still help:</b> each wrong guess shows how far its homeland is from the answer's, which way to go, and whether it's in the same branch or family.
+    <b>Misses still help:</b> each wrong guess shows how far its homeland is from the answer's and which way to go. Its colour says how related it is:
+    <span class="key">🟨 <b>Closely related</b>, like English and German. Many words still look and sound alike.</span>
+    <span class="key">🟧 <b>Distantly related</b>, like English and Hindi. They share an ancestor from thousands of years ago but sound nothing alike today.</span>
+    <span class="key">🟥 <b>Not related</b>, like English and Japanese.</span>
     <b>You can fail:</b> 6 guesses. The fewer you need, the better.
     Easy languages early in the week, hard ones at the weekend.
   </div>
@@ -364,6 +370,31 @@ function load(salt, num, pick){
 }
 const misses = () => S.guesses.length;          // every guess so far is a miss until the game ends
 const stage = () => Math.min(2, S.done ? 2 : misses());
+function relation(g){
+  const l = L[g.name];
+  if (g.kind==='good') return 'You got it';
+  if (g.kind==='branch') return 'Closely related';
+  if (g.kind==='family') return 'Distantly related';
+  return 'Not related';
+}
+// rough total speakers (first + second language), rounded; shown as the 4th-miss clue
+const SPEAKERS = {
+  Spanish:560e6, French:310e6, German:135e6, Italian:68e6, Portuguese:265e6, Russian:255e6, Japanese:125e6,
+  Mandarin:1.1e9, Korean:82e6, Arabic:370e6, Hindi:600e6, Dutch:25e6, Swedish:13e6, Norwegian:5e6, Danish:6e6,
+  Polish:40e6, Czech:11e6, Greek:13e6, Turkish:90e6, Vietnamese:85e6, Thai:60e6, Hebrew:9e6, Indonesian:250e6,
+  Finnish:5.5e6, Ukrainian:35e6, Romanian:25e6, Hungarian:13e6, Persian:80e6, Tagalog:80e6, Swahili:80e6,
+  Bengali:270e6, Tamil:85e6, Georgian:4e6, Icelandic:350e3, Welsh:0.9e6, Irish:2e6, Catalan:10e6, Basque:0.9e6,
+  Amharic:60e6, Zulu:28e6, Serbian:9e6,
+};
+function speakersClue(lang){
+  const n = SPEAKERS[lang];
+  if (!n) return 'Unknown';
+  const txt = n>=1e9 ? `About ${+(n/1e9).toFixed(1)} billion people`
+    : n>=1e6 ? `About ${+(n/1e6).toFixed(n<1e7?1:0)} million people`
+    : n>=0.8e6 ? 'Just under a million people'
+    : `About ${(Math.round(n/1e4)*1e4).toLocaleString('en')} people`;
+  return `${txt}<span class="sub">Rough count, including people who speak it as a second language.</span>`;
+}
 function update(){
   const left = BUDGET - S.guesses.length, el = document.getElementById('left');
   el.textContent = left; el.style.color = left===0 ? 'var(--bad)' : left<=2 ? 'var(--warn)' : '';
@@ -375,12 +406,11 @@ function update(){
   const shut = (id, label, what) => { const c=document.getElementById(id); c.classList.remove('open'); c.innerHTML = `<small>${label}</small><span>${what}</span>`; };
   if (m>=3 || S.showSol) open('c3','Written sentence',`<div class="txt" dir="auto"></div>`); else shut('c3','Clue after 3 misses','Written sentence');
   if (m>=3 || S.showSol) document.querySelector('#c3 .txt').textContent = S.text;
-  if (m>=4 || S.showSol) open('c4','Language family',`${a.family} › ${a.branch}`); else shut('c4','Clue after 4 misses','Language family');
+  if (m>=4 || S.showSol) open('c4','How many people speak it',speakersClue(S.p.lang)); else shut('c4','Clue after 4 misses','How many speak it');
   if (m>=5 || S.showSol) open('c5','Where it\'s spoken',S.p.region); else shut('c5','Clue after 5 misses','Where it\'s spoken');
-  const why = {good:'Correct', branch:'Same branch', family:'Same family', far:'Different family', skip:'Skipped'};
-  document.getElementById('guesses').innerHTML = S.guesses.map(g => g.kind==='skip'
+    document.getElementById('guesses').innerHTML = S.guesses.map(g => g.kind==='skip'
     ? `<div class="g c-skip"><span style="color:var(--muted)">Skipped</span><span></span><span></span></div>`
-    : `<div class="g c-${g.kind}"><span><b>${g.name}</b></span><span class="k">${g.kind==='good'?why.good:`${why[g.kind]} · ${Math.round(g.km).toLocaleString()} km`}</span><span class="arrow">${g.kind==='good'?'✅':g.arrow}</span></div>`).join('');
+    : `<div class="g c-${g.kind}"><span><b>${g.name}</b><span class="rel">${relation(g)}</span></span><span class="k">${g.kind==='good'?'Correct':`${Math.round(g.km).toLocaleString()} km`}</span><span class="arrow">${g.kind==='good'?'✅':g.arrow}</span></div>`).join('');
   const lock = S.done; ['input','submit','skip'].forEach(id=>document.getElementById(id).disabled=lock);
   voiceNote();
 }
